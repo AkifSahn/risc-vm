@@ -12,6 +12,8 @@ const (
 	I           // immediate
 	S           // store
 	B           // branch
+	U           // Upper immediate
+	J
 )
 
 const (
@@ -46,12 +48,22 @@ const (
 	Bge
 	_B_end
 
+	_J_start
+	Jal // Jump And Link
+	_J_end
+
+	_U_start
+	Lui
+	Auipc
+	_U_end
+
 	_Pseudo_start
 	Mv
 	Not
 	Neg
 	Li
 	Jr
+	Ret
 	_Pseudo_end
 
 	End
@@ -71,12 +83,12 @@ type Instruction struct {
 	_type   Inst_Type
 }
 
-func newInstruction(Op Inst_Op, Rd int, Rs1 int, Rs2 int) Instruction{
+func newInstruction(Op Inst_Op, Rd int, Rs1 int, Rs2 int) Instruction {
 	return Instruction{
-		Op:      Op,
-		Rd:      Rd,
-		Rs1:     Rs1,
-		Rs2:     Rs2,
+		Op:  Op,
+		Rd:  Rd,
+		Rs1: Rs1,
+		Rs2: Rs2,
 	}
 }
 
@@ -171,6 +183,10 @@ func (v *Vm) Fetch() {
 		inst._type = S
 	} else if _B_start < inst.Op && inst.Op < _B_end {
 		inst._type = B
+	} else if _U_start < inst.Op && inst.Op < _U_end {
+		inst._type = U
+	} else if _J_start < inst.Op && inst.Op < _J_end {
+		inst._type = J
 	}
 
 	v._fd_buff.inst = inst
@@ -194,12 +210,16 @@ func (v *Vm) Decode() {
 		inst._imm = inst.Rs2
 	case S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
 		inst._s1 = v.registers[inst.Rd].Data
-		inst._s2 = v.registers[inst.Rs2].Data
 		inst._imm = inst.Rs1
+		inst._s2 = v.registers[inst.Rs2].Data
 	case B:
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._s2 = v.registers[inst.Rs1].Data
 		inst._imm = inst.Rs2
+	case U:
+		inst._imm = inst.Rs1
+	case J:
+		inst._imm = inst.Rs1
 	}
 
 	v._dx_buff.inst = inst
@@ -238,24 +258,35 @@ func (v *Vm) Execute() {
 		v.pc = inst._s1 + inst._imm
 
 	case Store:
-		inst._result = inst._s1 + inst._imm
+		inst._result = inst._s2 + inst._imm
+		fmt.Printf("Storing %d at %d\n", inst._s1, inst._result)
 
 	case Beq:
 		if inst._s1 == inst._s2 {
-			v.pc += inst._imm-1
+			v.pc += inst._imm - 1 // v.pc holds the next instruction hence -1
 		}
 	case Bne:
 		if inst._s1 != inst._s2 {
-			v.pc += inst._imm-1
+			v.pc += inst._imm - 1
 		}
 	case Blt:
 		if inst._s1 < inst._s2 {
-			v.pc += inst._imm-1
+			v.pc += inst._imm - 1
 		}
 	case Bge:
 		if inst._s1 >= inst._s2 {
-			v.pc += inst._imm-1
+			v.pc += inst._imm - 1
 		}
+
+	case Jal: // Jump And Link
+		inst._result = v._dx_buff.pc
+		v.pc += inst._imm - 1
+
+	case Lui:
+		inst._result = inst._imm
+	case Auipc:
+		inst._result = (v._dx_buff.pc - 1) + inst._imm
+
 	case End:
 		v._halt = true
 	}
@@ -272,7 +303,7 @@ func (v *Vm) Memory() {
 
 	switch inst.Op {
 	case Store:
-		v.memory[inst._result] = inst._s2
+		v.memory[inst._result] = inst._s1
 	}
 
 	v._mw_buff = v._xm_buff
@@ -282,7 +313,7 @@ func (v *Vm) Writeback() {
 	inst := v._mw_buff.inst
 
 	// We don't want to writeback if instruction type is S
-	if inst._type == R || inst._type == I {
+	if inst._type == R || inst._type == I || inst._type == U || inst._type == J {
 		v.registers[inst.Rd].Data = inst._result // TODO: apply double buffer
 	}
 }
