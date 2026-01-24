@@ -45,7 +45,15 @@ const (
 	Bge
 	_B_end
 
+	_Pseudo_start
+	Mv
+	Not
+	Neg
+	Li
+	_Pseudo_end
+
 	End
+	_Unknown
 )
 
 type Instruction struct {
@@ -61,6 +69,14 @@ type Instruction struct {
 	_type   Inst_Type
 }
 
+func newInstruction(Op Inst_Op, Rd int, Rs1 int, Rs2 int) Instruction{
+	return Instruction{
+		Op:      Op,
+		Rd:      Rd,
+		Rs1:     Rs1,
+		Rs2:     Rs2,
+	}
+}
 
 type Register struct {
 	Data int
@@ -92,7 +108,7 @@ type Vm struct {
 	_mw_buff Pipeline_Buffer
 
 	_cycle int
-	_halt bool
+	_halt  bool
 }
 
 func NewVm() Vm {
@@ -166,16 +182,18 @@ func (v *Vm) Decode() {
 
 	// TODO: apply double buffer
 	// we may want to call an explicit write function for reading/writing from/to registers
-	inst._s1 = v.registers[inst.Rs1].Data
 
 	switch inst._type {
 	case R:
+		inst._s1 = v.registers[inst.Rs1].Data
 		inst._s2 = v.registers[inst.Rs2].Data
 	case I:
+		inst._s1 = v.registers[inst.Rs1].Data
 		inst._imm = inst.Rs2
-	case S:
+	case S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
+		inst._s1 = v.registers[inst.Rd].Data
 		inst._s2 = v.registers[inst.Rs2].Data
-		inst._imm = inst.Rd
+		inst._imm = inst.Rs1
 	case B:
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._s2 = v.registers[inst.Rs1].Data
@@ -219,19 +237,19 @@ func (v *Vm) Execute() {
 
 	case Beq:
 		if inst._s1 == inst._s2 {
-			v.pc += inst._imm
+			v.pc += inst._imm-1
 		}
 	case Bne:
 		if inst._s1 != inst._s2 {
-			v.pc += inst._imm
+			v.pc += inst._imm-1
 		}
 	case Blt:
 		if inst._s1 < inst._s2 {
-			v.pc += inst._imm
+			v.pc += inst._imm-1
 		}
 	case Bge:
 		if inst._s1 >= inst._s2 {
-			v.pc += inst._imm
+			v.pc += inst._imm-1
 		}
 	case End:
 		v._halt = true
@@ -265,7 +283,7 @@ func (v *Vm) Writeback() {
 }
 
 func (v *Vm) Run() {
-	for ;!v._halt; {
+	for !v._halt {
 		v.Fetch()
 		v.Decode()
 		v.Execute()

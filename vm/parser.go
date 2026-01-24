@@ -31,9 +31,9 @@ func stringToOpcode(s string) Inst_Op {
 		return Ori
 	case "andi":
 		return Andi
-	case "load":
+	case "lw":
 		return Load
-	case "store":
+	case "sw":
 		return Store
 	case "beq":
 		return Beq
@@ -45,11 +45,37 @@ func stringToOpcode(s string) Inst_Op {
 		return Bge
 	case "end":
 		return End
+	case "mv":
+		return Mv
+	case "not":
+		return Not
+	case "neg":
+		return Neg
+	case "li":
+		return Li
 	default:
 		log.Fatalf("Unknown opcode '%s'\n", s)
 	}
 
-	return End
+	return _Unknown
+}
+
+func expandPseudoInstruction(ps Instruction) Instruction {
+	switch ps.Op {
+	case Mv: //  addi rd, rs, 0 Copy register
+		return newInstruction(Addi, ps.Rd, ps.Rs1, 0)
+	case Not: // xori rd, rs, -1 One’s complement
+		return newInstruction(Xori, ps.Rd, ps.Rs1, -1)
+	case Neg: // sub rd, x0, rs Two’s complement
+		return newInstruction(Sub, ps.Rd, 0, ps.Rs1)
+	case Li: // addi Rd x0 imm(Rs1) Load immediate
+		return newInstruction(Addi, ps.Rd, 0, ps.Rs1)
+	default:
+		// TODO: Better log
+		log.Fatalf("ERROR(parser) - Unknown pseudo instruction!")
+	}
+
+	return Instruction{}
 }
 
 var abiToRegNum = map[string]int{
@@ -108,8 +134,9 @@ If given line is not a valid instruction line returns _, true
 */
 func parseInstructionLine(line string) (Instruction, bool) {
 	// Remove parantheses
-	line = strings.ReplaceAll(line, "(", "")
-	line = strings.ReplaceAll(line, ")", "")
+	line = strings.ReplaceAll(line, "(", " ")
+	line = strings.ReplaceAll(line, ")", " ")
+	line = strings.ReplaceAll(line, ",", " ")
 
 	var inst Instruction
 	tokens := strings.Fields(line)
@@ -173,6 +200,9 @@ func ParseProgramFromFile(filename string) []Instruction {
 			continue
 		}
 
+		if _Pseudo_start < inst.Op && inst.Op < _Pseudo_end {
+			inst = expandPseudoInstruction(inst)
+		}
 		program = append(program, inst)
 	}
 
