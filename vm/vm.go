@@ -105,13 +105,7 @@ func (v *Vm) DumpRegisters() {
 	fmt.Println("------------")
 	fmt.Println("Register Dump: ")
 	for i, reg := range v.registers {
-		fmt.Printf("R%d data=%d", i, reg.Data)
-		if reg.Busy {
-			fmt.Print(" [busy]")
-		} else {
-			fmt.Print(" [free]")
-		}
-		fmt.Println()
+		fmt.Printf("x%d data=%d\n", i, reg.Data)
 	}
 	fmt.Println("------------")
 }
@@ -119,7 +113,6 @@ func (v *Vm) DumpRegisters() {
 func (v *Vm) DumpAllMemory() {
 	fmt.Println("------------")
 	fmt.Println("Memory Dump: ")
-
 	for i, data := range v.memory {
 		fmt.Printf("(%d)data=%d ", i, data)
 		fmt.Println()
@@ -130,7 +123,6 @@ func (v *Vm) DumpAllMemory() {
 func (v *Vm) DumpMemory(start, end int) {
 	fmt.Println("------------")
 	fmt.Println("Memory Dump: ")
-
 	for i := start; i < end; i++ {
 		fmt.Printf("(%d)data=%d ", i, v.memory[i])
 		fmt.Println()

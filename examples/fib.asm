@@ -1,15 +1,22 @@
-addi R1 R0 0
-addi R2 R0 80
-subi R2 R2 1
+addi s4 zero 0 
+addi s5 zero 1 
 
-addi R3 R0 0
-addi R4 R0 1
+addi s2 zero 0 
+store 0 s2 s4
 
-add R5 R3 R4
-add R3 R0 R4
-add R4 R0 R5
-addi R1 R1 1
-blt R1 R2 -5
+addi s2 zero 1 
+store 0 s2 s5
 
-store 0 R0 R4
+addi s2 zero 2 
+addi s3 zero 11
+
+add s6 s4 s5
+store 0 s2 s6
+add s4 zero s5
+add s5 zero s6
+addi s2 s2 1 
+
+blt s2 s3 -6
+
 end
+
