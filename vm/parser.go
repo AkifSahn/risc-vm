@@ -33,6 +33,8 @@ func stringToOpcode(s string) Inst_Op {
 		return Andi
 	case "lw":
 		return Load
+	case "jalr":
+		return Jalr
 	case "sw":
 		return Store
 	case "beq":
@@ -53,6 +55,8 @@ func stringToOpcode(s string) Inst_Op {
 		return Neg
 	case "li":
 		return Li
+	case "jr":
+		return Jr
 	default:
 		log.Fatalf("Unknown opcode '%s'\n", s)
 	}
@@ -70,6 +74,8 @@ func expandPseudoInstruction(ps Instruction) Instruction {
 		return newInstruction(Sub, ps.Rd, 0, ps.Rs1)
 	case Li: // addi Rd x0 imm(Rs1) Load immediate
 		return newInstruction(Addi, ps.Rd, 0, ps.Rs1)
+	case Jr: // jalr x0, rs, 0 Jump register
+		return newInstruction(Jalr, 0, ps.Rd, 0)
 	default:
 		// TODO: Better log
 		log.Fatalf("ERROR(parser) - Unknown pseudo instruction!")

@@ -32,6 +32,7 @@ const (
 	Ori
 	Andi
 	Load // load-word
+	Jalr // Jump And Link Reg
 	_I_end
 
 	_S_start
@@ -50,6 +51,7 @@ const (
 	Not
 	Neg
 	Li
+	Jr
 	_Pseudo_end
 
 	End
@@ -231,6 +233,9 @@ func (v *Vm) Execute() {
 
 	case Load: // load
 		inst._result = inst._s1 + inst._imm
+	case Jalr:
+		inst._result = v._dx_buff.pc
+		v.pc = inst._s1 + inst._imm
 
 	case Store:
 		inst._result = inst._s1 + inst._imm
