@@ -1,6 +1,7 @@
 main:
     li      a0,30
     jal     ra,fib
+    sw      a0,0(zero)
     end
 
 fib:

@@ -314,6 +314,11 @@ func (v *Vm) Writeback() {
 
 	// We don't want to writeback if instruction type is S
 	if inst._type == R || inst._type == I || inst._type == U || inst._type == J {
+		// We don't allow writes to x0 register
+		if inst.Rd == 0{
+			return
+		}
+
 		v.registers[inst.Rd].Data = inst._result // TODO: apply double buffer
 	}
 }

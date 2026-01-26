@@ -261,8 +261,6 @@ func ParseProgramFromFile(filename string) []Instruction {
 		}
 	}
 
-	fmt.Println("Symbol table:\n", symbol_table)
-
 	// Reset the scanner, and line_num
 	line_num = 0
 	scanner = bufio.NewScanner(file)

@@ -11,5 +11,5 @@ func main() {
 	machine.LoadProgramFromFile("examples/fib.asm")
 	machine.Run()
 	machine.DumpRegisters()
-	machine.DumpMemory(0, 11)
+	machine.DumpMemory(0, 10)
 }
