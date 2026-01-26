@@ -1,18 +1,24 @@
-    li a0 20
-
-    mv t0 a0
-    addi t0 t0 -2
-    li t1 1
-    li t2 2
-
-    addi t0 t0 -1
-    add t1 t1 t2
-
-    xor t1 t1 t2
-    xor t2 t1 t2
-    xor t1 t1 t2
-    bne t0 zero -5
-
-    mv a0 t2
-    sw t2 10(zero)
+main:
+    li      a0,30
+    jal     ra,fib
     end
+
+fib:
+    mv      a4,a0
+    bge     zero,a0,.L4
+    li      a5,1
+    beq     a0,a5,.L1
+    li      a5,2
+    li      a0,1
+    li      a3,0
+    .L3:
+    mv      a2,a0
+    add     a0,a0,a3
+    addi    a5,a5,1
+    mv      a3,a2
+    bge     a4,a5,.L3
+    ret
+    .L4:
+    li      a0,0
+    .L1:
+    ret

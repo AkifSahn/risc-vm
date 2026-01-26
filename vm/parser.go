@@ -130,23 +130,50 @@ var abiToRegNum = map[string]int{
 	"t5": 30, "t6": 31,
 }
 
+// Symbol table holding label_str -> line_num
+type Symbol_Table map[string]int
+
+var symbol_table = make(Symbol_Table)
+
+var line_num int
+
 func parseRegisterValue(s string) int {
-	if reg, ok := abiToRegNum[s]; ok {
-		return reg
+	if val, ok := abiToRegNum[s]; ok {
+		return val
 	}
 
-	reg, err := strconv.Atoi(s)
+	// Check the symbol_table if this is a label we have seen before
+	if val, ok := symbol_table[s]; ok {
+		return val - line_num
+	}
+
+	val, err := strconv.Atoi(s)
 	if err != nil {
-		log.Fatalf("ERR(parser): field is not a valid register nor an immediate value! - '%s'", s)
+		log.Fatalf("ERR(parser): field is not a valid register, an immediate value or a label name! - '%s'", s)
 	}
 
-	return reg
+	return val
+}
+
+func doesLineDeclareLabel(line string) bool {
+	if line == "" {
+		return false
+	}
+
+	tokens := strings.Split(line, ":")
+
+	// Line does not contain ':' sep. Not a label
+	if len(tokens) == 1 {
+		return false
+	}
+
+	return true
 }
 
 /*
 This function parses the given line into an Instruction object.
 
-If given line is not a valid instruction line returns _, true
+returns _, true: if given line is not a valid instruction line
 */
 func parseInstructionLine(line string) (Instruction, bool) {
 	// Remove parantheses
@@ -196,7 +223,7 @@ func parseInstructionLine(line string) (Instruction, bool) {
 }
 
 /*
-This function tries to parse given file into an array of instructions struct
+This function tries to parse given file into an array of instructions
 
 Returns 'nil' on failure.
 */
@@ -207,10 +234,59 @@ func ParseProgramFromFile(filename string) []Instruction {
 	}
 	defer file.Close()
 
-	program := make([]Instruction, 0)
 	scanner := bufio.NewScanner(file)
+
+	// First fill the symbol table for accessing label addresses
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		if !doesLineDeclareLabel(line) {
+			line_num++
+			continue
+		}
+
+		// Fill the symbol_table
+		{
+			tokens := strings.Split(line, ":")
+
+			label := strings.TrimSpace(tokens[0])
+			symbol_table[label] = line_num
+
+			if strings.TrimSpace(tokens[1]) != "" {
+				line_num++
+			}
+		}
+	}
+
+	fmt.Println("Symbol table:\n", symbol_table)
+
+	// Reset the scanner, and line_num
+	line_num = 0
+	scanner = bufio.NewScanner(file)
+	file.Seek(0, 0)
+
+	program := make([]Instruction, 0)
+	// Parse the instructions line by line, expand pseudo instructions etc...
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Check if the line has a label declaration
+		// If line also contains an instruction, remove the label from line
+		// If line does not contains instruction, skip the line
+		if doesLineDeclareLabel(line){
+			tokens := strings.Split(line, ":")
+
+			if strings.TrimSpace(tokens[1]) != "" {
+				line = tokens[1]
+			}else{
+				continue
+			}
+
+		}
+
 		inst, pass := parseInstructionLine(line)
 		if pass {
 			continue
@@ -219,12 +295,22 @@ func ParseProgramFromFile(filename string) []Instruction {
 		if _Pseudo_start < inst.Op && inst.Op < _Pseudo_end {
 			inst = expandPseudoInstruction(inst)
 		}
+
+		// We may want to increase the line_num more than 1
+		// if the 'expandPseudoInstruction' expands the pseudo instructin into multiple instructions.
+		// we can just do 'line_num = len(inst)', assuming inst is an array of instructions.
+		line_num++
 		program = append(program, inst)
 	}
 
 	if err = scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "ERR - Failed to read file(%s): %s\n", filename, err.Error())
 		return nil
+	}
+
+	// TODO: Move the assertion into a seperate assert(x bool) function??
+	if len(program) != line_num {
+		panic("Assert: len(program) != line_num")
 	}
 
 	return program
