@@ -15,6 +15,12 @@ func stringToOpcode(s string) Inst_Op {
 		return Add
 	case "sub":
 		return Sub
+	case "mul":
+		return Mul
+	case "div":
+		return Div
+	case "rem":
+		return Rem
 	case "xor":
 		return Xor
 	case "or":
@@ -63,6 +69,10 @@ func stringToOpcode(s string) Inst_Op {
 		return Jr
 	case "ret":
 		return Ret
+	case "ble":
+		return Ble
+	case "bgt":
+		return Bgt
 	case "end":
 		return End
 	default:
@@ -86,6 +96,10 @@ func expandPseudoInstruction(ps Instruction) Instruction {
 		return newInstruction(Jalr, 0, ps.Rd, 0)
 	case Ret: // jalr x0, x1, 0 Return from subroutine
 		return newInstruction(Jalr, 0, 1, 0)
+	case Ble:
+		return newInstruction(Bge, ps.Rs1, ps.Rd, ps.Rs2)
+	case Bgt:
+		return newInstruction(Blt, ps.Rs1, ps.Rd, ps.Rs2)
 	default:
 		// TODO: Better log
 		log.Fatalf("ERROR(parser) - Unknown pseudo instruction!")
@@ -274,12 +288,12 @@ func ParseProgramFromFile(filename string) []Instruction {
 		// Check if the line has a label declaration
 		// If line also contains an instruction, remove the label from line
 		// If line does not contains instruction, skip the line
-		if doesLineDeclareLabel(line){
+		if doesLineDeclareLabel(line) {
 			tokens := strings.Split(line, ":")
 
 			if strings.TrimSpace(tokens[1]) != "" {
 				line = tokens[1]
-			}else{
+			} else {
 				continue
 			}
 

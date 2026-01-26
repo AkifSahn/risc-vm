@@ -22,6 +22,9 @@ const (
 	_R_start
 	Add
 	Sub
+	Mul
+	Div
+	Rem
 	Xor
 	Or
 	And
@@ -64,6 +67,8 @@ const (
 	Li
 	Jr
 	Ret
+	Ble
+	Bgt
 	_Pseudo_end
 
 	End
@@ -233,6 +238,12 @@ func (v *Vm) Execute() {
 		inst._result = inst._s1 + inst._s2
 	case Sub:
 		inst._result = inst._s1 - inst._s2
+	case Mul:
+		inst._result = inst._s1 * inst._s2
+	case Div:
+		inst._result = inst._s1 / inst._s2
+	case Rem:
+		inst._result = inst._s1 % inst._s2
 	case Xor:
 		inst._result = inst._s1 ^ inst._s2
 	case Or:
@@ -315,7 +326,7 @@ func (v *Vm) Writeback() {
 	// We don't want to writeback if instruction type is S
 	if inst._type == R || inst._type == I || inst._type == U || inst._type == J {
 		// We don't allow writes to x0 register
-		if inst.Rd == 0{
+		if inst.Rd == 0 {
 			return
 		}
 
