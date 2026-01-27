@@ -2,6 +2,7 @@ package vm
 
 import (
 	"fmt"
+	"log"
 )
 
 type Inst_Op int
@@ -111,7 +112,9 @@ type Pipeline_Buffer struct {
 	inst Instruction
 }
 
-const MEM_SIZE = 1024
+const WORD_SIZE = 4               // In bytes
+const MEM_SIZE = 100 * WORD_SIZE  // 100 Words
+const STACK_SIZE = 32 * WORD_SIZE // 32 words
 
 type Vm struct {
 	pc       int
@@ -119,7 +122,7 @@ type Vm struct {
 	pipeline Pipeline
 
 	registers [32]Register
-	memory    [MEM_SIZE]int
+	memory    [MEM_SIZE / 4]int
 
 	_fd_buff Pipeline_Buffer
 	_dx_buff Pipeline_Buffer
@@ -131,9 +134,14 @@ type Vm struct {
 }
 
 func NewVm() Vm {
-	return Vm{
+	vm := Vm{
 		program: make([]Instruction, 0),
 	}
+
+	// Initialize stack pointer to the MAX_ADDR
+	vm.registers[abiToRegNum["sp"]].Data = MEM_SIZE - WORD_SIZE
+
+	return vm
 }
 
 func (v *Vm) DumpRegisters() {
@@ -160,6 +168,17 @@ func (v *Vm) DumpMemory(start, end int) {
 	fmt.Println("Memory Dump: ")
 	for i := start; i < end; i++ {
 		fmt.Printf("(%d)data=%d ", i, v.memory[i])
+		fmt.Println()
+	}
+	fmt.Println("------------")
+}
+
+func (v *Vm) DumpStack() {
+	fmt.Println("------------")
+	fmt.Println("Stack Dump: ")
+	s_start := (MEM_SIZE - STACK_SIZE) / WORD_SIZE
+	for i := range STACK_SIZE / WORD_SIZE {
+		fmt.Printf("(%d)data=%d ", i, v.memory[i+s_start])
 		fmt.Println()
 	}
 	fmt.Println("------------")
@@ -269,8 +288,16 @@ func (v *Vm) Execute() {
 		v.pc = inst._s1 + inst._imm
 
 	case Store:
-		inst._result = inst._s2 + inst._imm
-		fmt.Printf("Storing %d at %d\n", inst._s1, inst._result)
+		addr := inst._s2 + inst._imm // In bytes
+
+		// Calculated addr is in bytes and WORD_SIZE is in bytes. So convert WORD_SIZE to bits
+		if addr%(WORD_SIZE) != 0 {
+			log.Fatalf("ERROR - Illegal write attempt to unaligned memory address: '%d'."+
+				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
+		}
+
+		addr = addr / 4     // Convert addr to memory index
+		inst._result = addr // Each memory cell holds one word
 
 	case Beq:
 		if inst._s1 == inst._s2 {
