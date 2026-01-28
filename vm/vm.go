@@ -39,6 +39,7 @@ const (
 	Inst_Andi
 	Inst_Jalr // Jump And Link Reg
 	Inst_Load
+	Inst_Slli
 	_Inst_I_end
 
 	_Inst_S_start
@@ -70,6 +71,7 @@ const (
 	Inst_Ret
 	Inst_Ble
 	Inst_Bgt
+	Inst_J
 	_Inst_Pseudo_end
 
 	Inst_End
@@ -114,7 +116,7 @@ type Pipeline_Buffer struct {
 
 const WORD_SIZE = 4              // In bytes
 const MEM_SIZE = 100 * WORD_SIZE // 100 Words
-const STACK_SIZE = 32            // 32 words
+const STACK_SIZE = 400            // 32 words
 
 type Vm struct {
 	pc       int32
@@ -200,7 +202,7 @@ func (v *Vm) DumpMemory(start, end int, format Dump_Format) {
 
 func (v *Vm) DumpStack(format Dump_Format) {
 	fmt.Println("------------")
-	fmt.Println("Stack Dump: ")
+	fmt.Printf("Stack Dump: Sp = %d\n", v.registers[abiToRegNum["sp"]].Data)
 
 	s_start := MEM_SIZE - STACK_SIZE
 	s_end := MEM_SIZE
@@ -324,6 +326,9 @@ func (v *Vm) Execute() {
 	case Inst_Jalr:
 		inst._result = v._dx_buff.pc
 		v.pc = inst._s1 + inst._imm
+
+	case Inst_Slli: // rd = rs1 << imm[0:4]
+		inst._result = inst._s1 << inst._imm
 
 	case Inst_Store: // Store word
 		addr := inst._s2 + inst._imm // In bytes
