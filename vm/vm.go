@@ -37,8 +37,8 @@ const (
 	Xori
 	Ori
 	Andi
-	Load // load-word
 	Jalr // Jump And Link Reg
+	Load
 	_I_end
 
 	_S_start
@@ -78,18 +78,18 @@ const (
 
 type Instruction struct {
 	Op  Inst_Op
-	Rd  int
-	Rs1 int
-	Rs2 int
+	Rd  int32
+	Rs1 int32
+	Rs2 int32
 
-	_s1     int
-	_s2     int
-	_imm    int
-	_result int
+	_s1     int32
+	_s2     int32
+	_imm    int32
+	_result int32
 	_type   Inst_Type
 }
 
-func newInstruction(Op Inst_Op, Rd int, Rs1 int, Rs2 int) Instruction {
+func newInstruction(Op Inst_Op, Rd int32, Rs1 int32, Rs2 int32) Instruction {
 	return Instruction{
 		Op:  Op,
 		Rd:  Rd,
@@ -99,7 +99,7 @@ func newInstruction(Op Inst_Op, Rd int, Rs1 int, Rs2 int) Instruction {
 }
 
 type Register struct {
-	Data int
+	Data int32
 	Busy bool
 }
 
@@ -108,21 +108,21 @@ type Pipeline struct {
 }
 
 type Pipeline_Buffer struct {
-	pc   int
+	pc   int32
 	inst Instruction
 }
 
-const WORD_SIZE = 4               // In bytes
-const MEM_SIZE = 100 * WORD_SIZE  // 100 Words
-const STACK_SIZE = 32 * WORD_SIZE // 32 words
+const WORD_SIZE = 4              // In bytes
+const MEM_SIZE = 100 * WORD_SIZE // 100 Words
+const STACK_SIZE = 32            // 32 words
 
 type Vm struct {
-	pc       int
+	pc       int32
 	program  []Instruction
 	pipeline Pipeline
 
 	registers [32]Register
-	memory    [MEM_SIZE / 4]int
+	memory    [MEM_SIZE]byte
 
 	_fd_buff Pipeline_Buffer
 	_dx_buff Pipeline_Buffer
@@ -139,7 +139,7 @@ func NewVm() Vm {
 	}
 
 	// Initialize stack pointer to the MAX_ADDR
-	vm.registers[abiToRegNum["sp"]].Data = MEM_SIZE - WORD_SIZE
+	vm.registers[abiToRegNum["sp"]].Data = MEM_SIZE
 
 	return vm
 }
@@ -176,9 +176,9 @@ func (v *Vm) DumpMemory(start, end int) {
 func (v *Vm) DumpStack() {
 	fmt.Println("------------")
 	fmt.Println("Stack Dump: ")
-	s_start := (MEM_SIZE - STACK_SIZE) / WORD_SIZE
-	for i := range STACK_SIZE / WORD_SIZE {
-		fmt.Printf("(%d)data=%d ", i, v.memory[i+s_start])
+	s_start := (MEM_SIZE - STACK_SIZE)
+	for i := range STACK_SIZE {
+		fmt.Printf("(%d)data=%b ", i, v.memory[i+s_start])
 		fmt.Println()
 	}
 	fmt.Println("------------")
@@ -230,8 +230,14 @@ func (v *Vm) Decode() {
 		inst._s1 = v.registers[inst.Rs1].Data
 		inst._s2 = v.registers[inst.Rs2].Data
 	case I:
-		inst._s1 = v.registers[inst.Rs1].Data
-		inst._imm = inst.Rs2
+		// In load, immediate is placed in a different position so we check it explicitly.
+		if inst.Op == Load {
+			inst._imm = inst.Rs1
+			inst._s1 = v.registers[inst.Rs2].Data
+		} else {
+			inst._s1 = v.registers[inst.Rs1].Data
+			inst._imm = inst.Rs2
+		}
 	case S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._imm = inst.Rs1
@@ -281,13 +287,19 @@ func (v *Vm) Execute() {
 	case Andi:
 		inst._result = inst._s1 & inst._imm
 
-	case Load: // load
-		inst._result = inst._s1 + inst._imm
+	case Load: // load word
+		addr := inst._s1 + inst._imm
+		if addr%(WORD_SIZE) != 0 {
+			log.Fatalf("ERROR - Illegal read attempt from unaligned memory address: '%d'."+
+				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
+		}
+		inst._result = addr
+
 	case Jalr:
 		inst._result = v._dx_buff.pc
 		v.pc = inst._s1 + inst._imm
 
-	case Store:
+	case Store: // Store word
 		addr := inst._s2 + inst._imm // In bytes
 
 		// Calculated addr is in bytes and WORD_SIZE is in bytes. So convert WORD_SIZE to bits
@@ -296,8 +308,7 @@ func (v *Vm) Execute() {
 				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
 		}
 
-		addr = addr / 4     // Convert addr to memory index
-		inst._result = addr // Each memory cell holds one word
+		inst._result = addr // Each memory cell holds one byte
 
 	case Beq:
 		if inst._s1 == inst._s2 {
@@ -339,12 +350,28 @@ func (v *Vm) Memory() {
 		return
 	}
 
+	// Memory layout is little-endian
+	// b3 b2 b1 b0
 	switch inst.Op {
-	case Store:
-		v.memory[inst._result] = inst._s1
+	case Store: // Store word
+		u := uint32(inst._s1)
+		addr := inst._result
+		v.memory[addr+0] = byte(u >> 0)
+		v.memory[addr+1] = byte(u >> 8)
+		v.memory[addr+2] = byte(u >> 16)
+		v.memory[addr+3] = byte(u >> 24)
+	case Load: // Load word
+		addr := inst._result
+		u := uint32(v.memory[addr+0]) |
+			uint32(v.memory[addr+1])<<8 |
+			uint32(v.memory[addr+2])<<16 |
+			uint32(v.memory[addr+3])<<24
+
+		inst._result = int32(u)
 	}
 
 	v._mw_buff = v._xm_buff
+	v._mw_buff.inst = inst
 }
 
 func (v *Vm) Writeback() {

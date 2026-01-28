@@ -151,14 +151,14 @@ var symbol_table = make(Symbol_Table)
 
 var line_num int
 
-func parseRegisterValue(s string) int {
+func parseRegisterValue(s string) int32 {
 	if val, ok := abiToRegNum[s]; ok {
-		return val
+		return int32(val)
 	}
 
 	// Check the symbol_table if this is a label we have seen before
 	if val, ok := symbol_table[s]; ok {
-		return val - line_num
+		return int32(val - line_num)
 	}
 
 	val, err := strconv.Atoi(s)
@@ -166,7 +166,7 @@ func parseRegisterValue(s string) int {
 		log.Fatalf("ERR(parser): field is not a valid register, an immediate value or a label name! - '%s'", s)
 	}
 
-	return val
+	return int32(val)
 }
 
 func doesLineDeclareLabel(line string) bool {

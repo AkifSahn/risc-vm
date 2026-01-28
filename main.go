@@ -10,6 +10,6 @@ func main() {
 	// machine.DumpRegisters()
 	machine.LoadProgramFromFile("examples/factorial.asm")
 	machine.Run()
+	machine.DumpStack()
 	machine.DumpRegisters()
-	machine.DumpMemory(0, 10)
 }
