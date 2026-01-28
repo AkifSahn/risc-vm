@@ -18,62 +18,62 @@ const (
 )
 
 const (
-	Nop Inst_Op = iota
+	Inst_Nop Inst_Op = iota
 
-	_R_start
-	Add
-	Sub
-	Mul
-	Div
-	Rem
-	Xor
-	Or
-	And
-	_R_end
+	_Inst_R_start
+	Inst_Add
+	Inst_Sub
+	Inst_Mul
+	Inst_Div
+	Inst_Rem
+	Inst_Xor
+	Inst_Or
+	Inst_And
+	_Inst_R_end
 
-	_I_start
-	Addi
-	Subi
-	Xori
-	Ori
-	Andi
-	Jalr // Jump And Link Reg
-	Load
-	_I_end
+	_Inst_I_start
+	Inst_Addi
+	Inst_Subi
+	Inst_Xori
+	Inst_Ori
+	Inst_Andi
+	Inst_Jalr // Jump And Link Reg
+	Inst_Load
+	_Inst_I_end
 
-	_S_start
-	Store // store-word
-	_S_end
+	_Inst_S_start
+	Inst_Store // store-word
+	_Inst_S_end
 
-	_B_start
-	Beq
-	Bne
-	Blt
-	Bge
-	_B_end
+	_Inst_B_start
+	Inst_Beq
+	Inst_Bne
+	Inst_Blt
+	Inst_Bge
+	_Inst_B_end
 
-	_J_start
-	Jal // Jump And Link
-	_J_end
+	_Inst_J_start
+	Inst_Jal // Jump And Link
+	_Inst_J_end
 
-	_U_start
-	Lui
-	Auipc
-	_U_end
+	_Inst_U_start
+	Inst_Lui
+	Inst_Auipc
+	_Inst_U_end
 
-	_Pseudo_start
-	Mv
-	Not
-	Neg
-	Li
-	Jr
-	Ret
-	Ble
-	Bgt
-	_Pseudo_end
+	_Inst_Pseudo_start
+	Inst_Mv
+	Inst_Not
+	Inst_Neg
+	Inst_Li
+	Inst_Jr
+	Inst_Ret
+	Inst_Ble
+	Inst_Bgt
+	_Inst_Pseudo_end
 
-	End
-	_Unknown
+	Inst_End
+	_Inst_Unknown
 )
 
 type Instruction struct {
@@ -225,17 +225,17 @@ func (v *Vm) Fetch() {
 	inst := v.program[v.pc]
 
 	// Determine the instruction type
-	if _R_start < inst.Op && inst.Op < _R_end {
+	if _Inst_R_start < inst.Op && inst.Op < _Inst_R_end {
 		inst._type = R
-	} else if _I_start < inst.Op && inst.Op < _I_end {
+	} else if _Inst_I_start < inst.Op && inst.Op < _Inst_I_end {
 		inst._type = I
-	} else if _S_start < inst.Op && inst.Op < _S_end {
+	} else if _Inst_S_start < inst.Op && inst.Op < _Inst_S_end {
 		inst._type = S
-	} else if _B_start < inst.Op && inst.Op < _B_end {
+	} else if _Inst_B_start < inst.Op && inst.Op < _Inst_B_end {
 		inst._type = B
-	} else if _U_start < inst.Op && inst.Op < _U_end {
+	} else if _Inst_U_start < inst.Op && inst.Op < _Inst_U_end {
 		inst._type = U
-	} else if _J_start < inst.Op && inst.Op < _J_end {
+	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
 		inst._type = J
 	}
 
@@ -257,7 +257,7 @@ func (v *Vm) Decode() {
 		inst._s2 = v.registers[inst.Rs2].Data
 	case I:
 		// In load, immediate is placed in a different position so we check it explicitly.
-		if inst.Op == Load {
+		if inst.Op == Inst_Load {
 			inst._imm = inst.Rs1
 			inst._s1 = v.registers[inst.Rs2].Data
 		} else {
@@ -285,35 +285,35 @@ func (v *Vm) Decode() {
 func (v *Vm) Execute() {
 	inst := v._dx_buff.inst
 	switch inst.Op {
-	case Add:
+	case Inst_Add:
 		inst._result = inst._s1 + inst._s2
-	case Sub:
+	case Inst_Sub:
 		inst._result = inst._s1 - inst._s2
-	case Mul:
+	case Inst_Mul:
 		inst._result = inst._s1 * inst._s2
-	case Div:
+	case Inst_Div:
 		inst._result = inst._s1 / inst._s2
-	case Rem:
+	case Inst_Rem:
 		inst._result = inst._s1 % inst._s2
-	case Xor:
+	case Inst_Xor:
 		inst._result = inst._s1 ^ inst._s2
-	case Or:
+	case Inst_Or:
 		inst._result = inst._s1 | inst._s2
-	case And:
+	case Inst_And:
 		inst._result = inst._s1 & inst._s2
 
-	case Addi:
+	case Inst_Addi:
 		inst._result = inst._s1 + inst._imm
-	case Subi:
+	case Inst_Subi:
 		inst._result = inst._s1 - inst._imm
-	case Xori:
+	case Inst_Xori:
 		inst._result = inst._s1 ^ inst._imm
-	case Ori:
+	case Inst_Ori:
 		inst._result = inst._s1 | inst._imm
-	case Andi:
+	case Inst_Andi:
 		inst._result = inst._s1 & inst._imm
 
-	case Load: // load word
+	case Inst_Load: // load word
 		addr := inst._s1 + inst._imm
 		if addr%(WORD_SIZE) != 0 {
 			log.Fatalf("ERROR - Illegal read attempt from unaligned memory address: '%d'."+
@@ -321,11 +321,11 @@ func (v *Vm) Execute() {
 		}
 		inst._result = addr
 
-	case Jalr:
+	case Inst_Jalr:
 		inst._result = v._dx_buff.pc
 		v.pc = inst._s1 + inst._imm
 
-	case Store: // Store word
+	case Inst_Store: // Store word
 		addr := inst._s2 + inst._imm // In bytes
 
 		// Calculated addr is in bytes and WORD_SIZE is in bytes. So convert WORD_SIZE to bits
@@ -336,33 +336,33 @@ func (v *Vm) Execute() {
 
 		inst._result = addr // Each memory cell holds one byte
 
-	case Beq:
+	case Inst_Beq:
 		if inst._s1 == inst._s2 {
 			v.pc += inst._imm - 1 // v.pc holds the next instruction hence -1
 		}
-	case Bne:
+	case Inst_Bne:
 		if inst._s1 != inst._s2 {
 			v.pc += inst._imm - 1
 		}
-	case Blt:
+	case Inst_Blt:
 		if inst._s1 < inst._s2 {
 			v.pc += inst._imm - 1
 		}
-	case Bge:
+	case Inst_Bge:
 		if inst._s1 >= inst._s2 {
 			v.pc += inst._imm - 1
 		}
 
-	case Jal: // Jump And Link
+	case Inst_Jal: // Jump And Link
 		inst._result = v._dx_buff.pc
 		v.pc += inst._imm - 1
 
-	case Lui:
+	case Inst_Lui:
 		inst._result = inst._imm
-	case Auipc:
+	case Inst_Auipc:
 		inst._result = (v._dx_buff.pc - 1) + inst._imm
 
-	case End:
+	case Inst_End:
 		v._halt = true
 	}
 
@@ -379,14 +379,14 @@ func (v *Vm) Memory() {
 	// Memory layout is little-endian
 	// b3 b2 b1 b0
 	switch inst.Op {
-	case Store: // Store word
+	case Inst_Store: // Store word
 		u := uint32(inst._s1)
 		addr := inst._result
 		v.memory[addr+0] = byte(u >> 0)
 		v.memory[addr+1] = byte(u >> 8)
 		v.memory[addr+2] = byte(u >> 16)
 		v.memory[addr+3] = byte(u >> 24)
-	case Load: // Load word
+	case Inst_Load: // Load word
 		addr := inst._result
 		u := uint32(v.memory[addr+0]) |
 			uint32(v.memory[addr+1])<<8 |

@@ -12,94 +12,94 @@ import (
 func stringToOpcode(s string) Inst_Op {
 	switch s {
 	case "add":
-		return Add
+		return Inst_Add
 	case "sub":
-		return Sub
+		return Inst_Sub
 	case "mul":
-		return Mul
+		return Inst_Mul
 	case "div":
-		return Div
+		return Inst_Div
 	case "rem":
-		return Rem
+		return Inst_Rem
 	case "xor":
-		return Xor
+		return Inst_Xor
 	case "or":
-		return Or
+		return Inst_Or
 	case "and":
-		return And
+		return Inst_And
 	case "addi":
-		return Addi
+		return Inst_Addi
 	case "subi":
-		return Subi
+		return Inst_Subi
 	case "xori":
-		return Xori
+		return Inst_Xori
 	case "ori":
-		return Ori
+		return Inst_Ori
 	case "andi":
-		return Andi
-	case "lw":
-		return Load
+		return Inst_Andi
 	case "jalr":
-		return Jalr
+		return Inst_Jalr
+	case "lw":
+		return Inst_Load
 	case "sw":
-		return Store
+		return Inst_Store
 	case "beq":
-		return Beq
+		return Inst_Beq
 	case "bne":
-		return Bne
+		return Inst_Bne
 	case "blt":
-		return Blt
+		return Inst_Blt
 	case "bge":
-		return Bge
+		return Inst_Bge
 	case "jal":
-		return Jal
+		return Inst_Jal
 	case "lui":
-		return Lui
+		return Inst_Lui
 	case "auipc":
-		return Auipc
+		return Inst_Auipc
 	case "mv":
-		return Mv
+		return Inst_Mv
 	case "not":
-		return Not
+		return Inst_Not
 	case "neg":
-		return Neg
+		return Inst_Neg
 	case "li":
-		return Li
+		return Inst_Li
 	case "jr":
-		return Jr
+		return Inst_Jr
 	case "ret":
-		return Ret
+		return Inst_Ret
 	case "ble":
-		return Ble
+		return Inst_Ble
 	case "bgt":
-		return Bgt
+		return Inst_Bgt
 	case "end":
-		return End
+		return Inst_End
 	default:
 		log.Fatalf("Unknown opcode '%s'\n", s)
 	}
 
-	return _Unknown
+	return _Inst_Unknown
 }
 
 func expandPseudoInstruction(ps Instruction) Instruction {
 	switch ps.Op {
-	case Mv: //  addi rd, rs, 0 Copy register
-		return newInstruction(Addi, ps.Rd, ps.Rs1, 0)
-	case Not: // xori rd, rs, -1 One’s complement
-		return newInstruction(Xori, ps.Rd, ps.Rs1, -1)
-	case Neg: // sub rd, x0, rs Two’s complement
-		return newInstruction(Sub, ps.Rd, 0, ps.Rs1)
-	case Li: // addi Rd x0 imm(Rs1) Load immediate
-		return newInstruction(Addi, ps.Rd, 0, ps.Rs1)
-	case Jr: // jalr x0, rs, 0 Jump register
-		return newInstruction(Jalr, 0, ps.Rd, 0)
-	case Ret: // jalr x0, x1, 0 Return from subroutine
-		return newInstruction(Jalr, 0, 1, 0)
-	case Ble:
-		return newInstruction(Bge, ps.Rs1, ps.Rd, ps.Rs2)
-	case Bgt:
-		return newInstruction(Blt, ps.Rs1, ps.Rd, ps.Rs2)
+	case Inst_Mv: //  addi rd, rs, 0 Copy register
+		return newInstruction(Inst_Addi, ps.Rd, ps.Rs1, 0)
+	case Inst_Not: // xori rd, rs, -1 One’s complement
+		return newInstruction(Inst_Xori, ps.Rd, ps.Rs1, -1)
+	case Inst_Neg: // sub rd, x0, rs Two’s complement
+		return newInstruction(Inst_Sub, ps.Rd, 0, ps.Rs1)
+	case Inst_Li: // addi Rd x0 imm(Rs1) Load immediate
+		return newInstruction(Inst_Addi, ps.Rd, 0, ps.Rs1)
+	case Inst_Jr: // jalr x0, rs, 0 Jump register
+		return newInstruction(Inst_Jalr, 0, ps.Rd, 0)
+	case Inst_Ret: // jalr x0, x1, 0 Return from subroutine
+		return newInstruction(Inst_Jalr, 0, 1, 0)
+	case Inst_Ble:
+		return newInstruction(Inst_Bge, ps.Rs1, ps.Rd, ps.Rs2)
+	case Inst_Bgt:
+		return newInstruction(Inst_Blt, ps.Rs1, ps.Rd, ps.Rs2)
 	default:
 		// TODO: Better log
 		log.Fatalf("ERROR(parser) - Unknown pseudo instruction!")
@@ -304,7 +304,7 @@ func ParseProgramFromFile(filename string) []Instruction {
 			continue
 		}
 
-		if _Pseudo_start < inst.Op && inst.Op < _Pseudo_end {
+		if _Inst_Pseudo_start < inst.Op && inst.Op < _Inst_Pseudo_end {
 			inst = expandPseudoInstruction(inst)
 		}
 
