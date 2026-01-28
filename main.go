@@ -7,9 +7,7 @@ import (
 var machine vm.Vm = vm.NewVm()
 
 func main() {
-	// machine.DumpRegisters()
 	machine.LoadProgramFromFile("examples/factorial_recursive.asm")
 	machine.Run()
-	machine.DumpStack()
-	machine.DumpRegisters()
+	machine.DumpStack(vm.DUMP_DEC)
 }

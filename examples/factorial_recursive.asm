@@ -5,6 +5,9 @@ main:
     jal     ra factorial
     lw      ra,12(sp)
     addi    sp,sp,16
+
+    addi    sp sp -4
+    sw      a0 0(sp)
     end
 
 factorial:
