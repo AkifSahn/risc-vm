@@ -86,32 +86,32 @@ func stringToOpcode(s string) Inst_Op {
 	return _Inst_Unknown
 }
 
-func expandPseudoInstruction(ps Instruction) Instruction {
+func expandPseudoInstruction(ps Instruction) []Instruction {
 	switch ps.Op {
 	case Inst_Mv: //  addi rd, rs, 0 Copy register
-		return newInstruction(Inst_Addi, ps.Rd, ps.Rs1, 0)
+		return []Instruction{newInstruction(Inst_Addi, ps.Rd, ps.Rs1, 0)}
 	case Inst_Not: // xori rd, rs, -1 One’s complement
-		return newInstruction(Inst_Xori, ps.Rd, ps.Rs1, -1)
+		return []Instruction{newInstruction(Inst_Xori, ps.Rd, ps.Rs1, -1)}
 	case Inst_Neg: // sub rd, x0, rs Two’s complement
-		return newInstruction(Inst_Sub, ps.Rd, 0, ps.Rs1)
+		return []Instruction{newInstruction(Inst_Sub, ps.Rd, 0, ps.Rs1)}
 	case Inst_Li: // addi Rd x0 imm(Rs1) Load immediate
-		return newInstruction(Inst_Addi, ps.Rd, 0, ps.Rs1)
+		return []Instruction{newInstruction(Inst_Addi, ps.Rd, 0, ps.Rs1)}
 	case Inst_Jr: // jalr x0, rs, 0 Jump register
-		return newInstruction(Inst_Jalr, 0, ps.Rd, 0)
+		return []Instruction{newInstruction(Inst_Jalr, 0, ps.Rd, 0)}
 	case Inst_Ret: // jalr x0, x1, 0 Return from subroutine
-		return newInstruction(Inst_Jalr, 0, 1, 0)
+		return []Instruction{newInstruction(Inst_Jalr, 0, 1, 0)}
 	case Inst_Ble:
-		return newInstruction(Inst_Bge, ps.Rs1, ps.Rd, ps.Rs2)
+		return []Instruction{newInstruction(Inst_Bge, ps.Rs1, ps.Rd, ps.Rs2)}
 	case Inst_Bgt:
-		return newInstruction(Inst_Blt, ps.Rs1, ps.Rd, ps.Rs2)
+		return []Instruction{newInstruction(Inst_Blt, ps.Rs1, ps.Rd, ps.Rs2)}
 	case Inst_J:
-		return newInstruction(Inst_Jal, 0, ps.Rd, 0)
+		return []Instruction{newInstruction(Inst_Jal, 0, ps.Rd, 0)}
 	default:
 		// TODO: Better log
 		log.Fatalf("ERROR(parser) - Unknown pseudo instruction!")
 	}
 
-	return Instruction{}
+	return []Instruction{Instruction{}}
 }
 
 var abiToRegNum = map[string]int{
@@ -311,14 +311,14 @@ func ParseProgramFromFile(filename string) []Instruction {
 		}
 
 		if _Inst_Pseudo_start < inst.Op && inst.Op < _Inst_Pseudo_end {
-			inst = expandPseudoInstruction(inst)
+			expanded_inst := expandPseudoInstruction(inst)
+			program = append(program, expanded_inst...)
+			line_num += len(expanded_inst)
+		} else {
+			program = append(program, inst)
+			line_num++
 		}
 
-		// We may want to increase the line_num more than 1
-		// if the 'expandPseudoInstruction' expands the pseudo instructin into multiple instructions.
-		// we can just do 'line_num = len(inst)', assuming inst is an array of instructions.
-		line_num++
-		program = append(program, inst)
 	}
 
 	if err = scanner.Err(); err != nil {
