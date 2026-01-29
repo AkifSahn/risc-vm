@@ -77,6 +77,8 @@ func stringToOpcode(s string) Inst_Op {
 		return Inst_Bgt
 	case "j":
 		return Inst_J
+	case "call":
+		return Inst_Call
 	case "end":
 		return Inst_End
 	default:
@@ -106,6 +108,19 @@ func expandPseudoInstruction(ps Instruction) []Instruction {
 		return []Instruction{newInstruction(Inst_Blt, ps.Rs1, ps.Rd, ps.Rs2)}
 	case Inst_J:
 		return []Instruction{newInstruction(Inst_Jal, 0, ps.Rd, 0)}
+
+	/* Based on the risc-v manual, call expands to two instructions:
+	call offset:
+		auipc x1, offset[31:12]
+		jalr x1, x1, offset[11:0]
+
+	And call is used for calling 'far-away' subroutines.
+
+	But in our implementation, we can just expand to 'jal ra offset',
+	since it can handle any length jumps
+	*/
+	case Inst_Call:
+		return []Instruction{newInstruction(Inst_Jal, 1, ps.Rd, 0)}
 	default:
 		// TODO: Better log
 		log.Fatalf("ERROR(parser) - Unknown pseudo instruction!")

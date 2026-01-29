@@ -43,7 +43,7 @@ main:
     li      a2,3
     mv      a1,a2
     mv      a0,a2
-    jal ra    matmul
+    call    matmul
     lw      a0,4(sp)
     lw      ra,124(sp)
     addi    sp,sp,128

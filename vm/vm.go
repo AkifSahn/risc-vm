@@ -72,6 +72,7 @@ const (
 	Inst_Ble
 	Inst_Bgt
 	Inst_J
+	Inst_Call
 	_Inst_Pseudo_end
 
 	Inst_End
@@ -116,7 +117,7 @@ type Pipeline_Buffer struct {
 
 const WORD_SIZE = 4              // In bytes
 const MEM_SIZE = 100 * WORD_SIZE // 100 Words
-const STACK_SIZE = 400            // 32 words
+const STACK_SIZE = 400           // 32 words
 
 type Vm struct {
 	pc       int32
