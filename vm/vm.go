@@ -79,6 +79,12 @@ const (
 	_Inst_Unknown
 )
 
+type Pipeline_Buffer struct {
+	pc        int32
+	inst      Instruction
+	_is_empty bool
+}
+
 type Instruction struct {
 	Op  Inst_Op
 	Rd  int32
@@ -106,23 +112,14 @@ type Register struct {
 	Busy bool
 }
 
-type Pipeline struct {
-	f, d, x, m, w Instruction
-}
-
-type Pipeline_Buffer struct {
-	pc   int32
-	inst Instruction
-}
-
 const WORD_SIZE = 4              // In bytes
 const MEM_SIZE = 100 * WORD_SIZE // 100 Words
 const STACK_SIZE = 400           // 32 words
 
 type Vm struct {
-	pc       int32
-	program  []Instruction
-	pipeline Pipeline
+	pc            int32
+	program       []Instruction
+	_program_size int32
 
 	registers [32]Register
 	memory    [MEM_SIZE]byte
@@ -143,6 +140,11 @@ func NewVm() Vm {
 
 	// Initialize stack pointer to the MAX_ADDR
 	vm.registers[abiToRegNum["sp"]].Data = MEM_SIZE
+
+	vm._fd_buff._is_empty = true
+	vm._dx_buff._is_empty = true
+	vm._xm_buff._is_empty = true
+	vm._mw_buff._is_empty = true
 
 	return vm
 }
@@ -222,6 +224,7 @@ func (v *Vm) LoadProgramFromFile(fileName string) {
 func (v *Vm) SetProgram(program []Instruction) {
 	v.pc = 0
 	v.program = program
+	v._program_size = int32(len(program))
 }
 
 func (v *Vm) Fetch() {
@@ -243,6 +246,7 @@ func (v *Vm) Fetch() {
 	}
 
 	v._fd_buff.inst = inst
+	v._fd_buff._is_empty = false
 	v.pc++
 
 	v._fd_buff.pc = v.pc
@@ -282,6 +286,7 @@ func (v *Vm) Decode() {
 	}
 
 	v._dx_buff.inst = inst
+	v._dx_buff._is_empty = false
 	v._dx_buff.pc = v._fd_buff.pc
 }
 
@@ -373,6 +378,7 @@ func (v *Vm) Execute() {
 	}
 
 	v._xm_buff.inst = inst
+	v._xm_buff._is_empty = false
 	v._xm_buff.pc = v._dx_buff.pc
 }
 
@@ -402,7 +408,9 @@ func (v *Vm) Memory() {
 		inst._result = int32(u)
 	}
 
+	// TODO: should we handle B-type differently??
 	v._mw_buff = v._xm_buff
+	v._mw_buff._is_empty = false
 	v._mw_buff.inst = inst
 }
 
@@ -420,13 +428,54 @@ func (v *Vm) Writeback() {
 	}
 }
 
-func (v *Vm) Run() {
+func (v *Vm) RunSequential() {
 	for !v._halt {
+		v._cycle++
 		v.Fetch()
 		v.Decode()
 		v.Execute()
 		v.Memory()
 		v.Writeback()
+	}
+}
+
+func (v *Vm) RunPipelined() {
+	for !v._halt {
 		v._cycle++
+		v.ExecuteCycle()
+	}
+}
+
+// In pipelined fashion, we may execute multiple pipeline stage
+// For example, in a single cycle the processor could run: EX, D and F
+// each belonging to different instructions.
+//
+// This functions does exactly that, each stage has it's own instruction.
+// At the end of each cycle, instructions moves to the next stage in the pipeline.
+func (v *Vm) ExecuteCycle() {
+	// fmt.Printf("At cycle: %d\n", v._cycle)
+	if !v._mw_buff._is_empty && !v._halt {
+		v.Writeback()
+		// fmt.Printf("\tinst %d -> Writeback()\n", v._mw_buff.pc)
+	}
+
+	if !v._xm_buff._is_empty && !v._halt {
+		v.Memory()
+		// fmt.Printf("\tinst %d -> Memory()\n", v._xm_buff.pc)
+	}
+
+	if !v._dx_buff._is_empty && !v._halt {
+		v.Execute()
+		// fmt.Printf("\tinst %d -> Execute()\n", v._dx_buff.pc)
+	}
+
+	if !v._fd_buff._is_empty && !v._halt {
+		v.Decode()
+		// fmt.Printf("\tinst %d -> Decode()\n", v._fd_buff.pc)
+	}
+
+	if v.pc < v._program_size && !v._halt {
+		v.Fetch()
+		// fmt.Printf("\tinst %d -> Fetch()\n", v.pc)
 	}
 }

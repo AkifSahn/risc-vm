@@ -9,6 +9,6 @@ var machine vm.Vm = vm.NewVm()
 func main() {
 	// machine.LoadProgramFromFile("examples/factorial_recursive.asm")
 	machine.LoadProgramFromFile("examples/matmul.asm")
-	machine.Run()
+	machine.RunSequential()
 	machine.DumpStack(vm.DUMP_DEC)
 }
