@@ -254,6 +254,8 @@ func (v *Vm) Fetch() {
 
 func (v *Vm) Decode() {
 	inst := v._fd_buff.inst
+	pc := v._fd_buff.pc
+	v._fd_buff._is_empty = true
 
 	// TODO: apply double buffer
 	// we may want to call an explicit write function for reading/writing from/to registers
@@ -286,12 +288,15 @@ func (v *Vm) Decode() {
 	}
 
 	v._dx_buff.inst = inst
+	v._dx_buff.pc = pc
 	v._dx_buff._is_empty = false
-	v._dx_buff.pc = v._fd_buff.pc
 }
 
 func (v *Vm) Execute() {
 	inst := v._dx_buff.inst
+	pc := v._dx_buff.pc
+	v._dx_buff._is_empty = true
+
 	switch inst.Op {
 	case Inst_Add:
 		inst._result = inst._s1 + inst._s2
@@ -330,7 +335,7 @@ func (v *Vm) Execute() {
 		inst._result = addr
 
 	case Inst_Jalr:
-		inst._result = v._dx_buff.pc
+		inst._result = pc
 		v.pc = inst._s1 + inst._imm
 
 	case Inst_Slli: // rd = rs1 << imm[0:4]
@@ -365,25 +370,28 @@ func (v *Vm) Execute() {
 		}
 
 	case Inst_Jal: // Jump And Link
-		inst._result = v._dx_buff.pc
+		inst._result = pc
 		v.pc += inst._imm - 1
 
 	case Inst_Lui:
 		inst._result = inst._imm
 	case Inst_Auipc:
-		inst._result = (v._dx_buff.pc - 1) + inst._imm
+		inst._result = (pc - 1) + inst._imm
 
-	case Inst_End:
-		v._halt = true
+		//Halting at execution stage, breaks the pipeline. So we will halt at the writeback instead
+		// case Inst_End:
+		// 	v._halt = true
 	}
 
 	v._xm_buff.inst = inst
+	v._xm_buff.pc = pc
 	v._xm_buff._is_empty = false
-	v._xm_buff.pc = v._dx_buff.pc
 }
 
 func (v *Vm) Memory() {
 	inst := v._xm_buff.inst
+	pc := v._xm_buff.pc
+
 	if inst._type == B {
 		return
 	}
@@ -409,13 +417,20 @@ func (v *Vm) Memory() {
 	}
 
 	// TODO: should we handle B-type differently??
-	v._mw_buff = v._xm_buff
-	v._mw_buff._is_empty = false
 	v._mw_buff.inst = inst
+	v._mw_buff.pc = pc
+	v._mw_buff._is_empty = false
 }
 
 func (v *Vm) Writeback() {
 	inst := v._mw_buff.inst
+	// pc := v._mw_buff.pc
+	v._mw_buff._is_empty = true
+
+	if inst.Op == Inst_End {
+		v._halt = true
+		return
+	}
 
 	// We don't want to writeback if instruction type is S
 	if inst._type == R || inst._type == I || inst._type == U || inst._type == J {
@@ -426,6 +441,7 @@ func (v *Vm) Writeback() {
 
 		v.registers[inst.Rd].Data = inst._result // TODO: apply double buffer
 	}
+
 }
 
 func (v *Vm) RunSequential() {
@@ -453,29 +469,29 @@ func (v *Vm) RunPipelined() {
 // This functions does exactly that, each stage has it's own instruction.
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
-	// fmt.Printf("At cycle: %d\n", v._cycle)
+	fmt.Printf("At cycle: %d\n", v._cycle)
 	if !v._mw_buff._is_empty && !v._halt {
 		v.Writeback()
-		// fmt.Printf("\tinst %d -> Writeback()\n", v._mw_buff.pc)
+		fmt.Printf("\tinst %d -> Writeback()\n", v._mw_buff.pc)
 	}
 
 	if !v._xm_buff._is_empty && !v._halt {
 		v.Memory()
-		// fmt.Printf("\tinst %d -> Memory()\n", v._xm_buff.pc)
+		fmt.Printf("\tinst %d -> Memory()\n", v._xm_buff.pc)
 	}
 
 	if !v._dx_buff._is_empty && !v._halt {
 		v.Execute()
-		// fmt.Printf("\tinst %d -> Execute()\n", v._dx_buff.pc)
+		fmt.Printf("\tinst %d -> Execute()\n", v._dx_buff.pc)
 	}
 
 	if !v._fd_buff._is_empty && !v._halt {
 		v.Decode()
-		// fmt.Printf("\tinst %d -> Decode()\n", v._fd_buff.pc)
+		fmt.Printf("\tinst %d -> Decode()\n", v._fd_buff.pc)
 	}
 
 	if v.pc < v._program_size && !v._halt {
 		v.Fetch()
-		// fmt.Printf("\tinst %d -> Fetch()\n", v.pc)
+		fmt.Printf("\tinst %d -> Fetch()\n", v.pc)
 	}
 }
