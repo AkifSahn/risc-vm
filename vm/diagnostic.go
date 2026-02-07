@@ -1,6 +1,9 @@
 package vm
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 type Dump_Format uint8
 
@@ -10,17 +13,49 @@ const (
 	DUMP_DEC
 )
 
+func (v *Vm) CalculateCpi() float32{
+	if !v._halt || v._cycle <= 0{
+		fmt.Printf("Run the program first!")
+		return -1
+	}
+
+	fmt.Printf("size = %d\n", v._program_size)
+	return float32(v._cycle)/float32(v._n_executed_inst)
+}
+
+func (v *Vm) PrintRegister(reg_str string) {
+	reg_num, ok := abiToRegNum[reg_str]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Invalid register name: '%s'", reg_str)
+		return
+	}
+
+	reg := v.registers[reg_num]
+
+	status := "free"
+	if reg.Busy {
+		status = "busy"
+	}
+
+	fmt.Printf("%s -> %d (%s)\n", reg_str, reg.Data, status)
+}
+
 func (v *Vm) DumpRegisters(format Dump_Format) {
 	fmt.Println("------------")
 	fmt.Println("Register Dump: ")
 	for i, reg := range v.registers {
+		status := "free"
+		if reg.Busy {
+			status = "busy"
+		}
+
 		switch format {
 		case DUMP_BIN:
-			fmt.Printf("\033[0;33m%2d\033[0m = %.32b (binary)\n", i, reg.Data)
+			fmt.Printf("\033[0;33m%2d\033[0m = %.32b (%s) (binary)\n", i, reg.Data, status)
 		case DUMP_HEX:
-			fmt.Printf("\033[0;33m%2d\033[0m = %.4X (hex)\n", i, reg.Data)
+			fmt.Printf("\033[0;33m%2d\033[0m = %.4X (%s) (hex)\n", i, reg.Data, status)
 		case DUMP_DEC:
-			fmt.Printf("\033[0;33m%2d\033[0m = %d (decimal)\n", i, reg.Data)
+			fmt.Printf("\033[0;33m%2d\033[0m = %d (%s) (decimal)\n", i, reg.Data, status)
 		}
 	}
 	fmt.Println("------------")

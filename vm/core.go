@@ -137,6 +137,8 @@ type Vm struct {
 	_cycle int
 	_halt  bool
 	_stall byte // A bitmap for different stalls?? Is this a good idea??
+
+	_n_executed_inst int
 }
 
 func CreateVm() Vm {
@@ -460,12 +462,14 @@ func (v *Vm) run_writeback() {
 
 func (v *Vm) RunSequential() {
 	for !v._halt {
-		v._cycle++
 		v.run_fetch()
 		v.run_decode()
 		v.run_execute()
 		v.run_memory()
 		v.run_writeback()
+
+		v._cycle += 5
+		v._n_executed_inst++
 	}
 }
 
@@ -505,5 +509,6 @@ func (v *Vm) ExecuteCycle() {
 
 	if v.pc < v._program_size && !v._halt && v._stall == 0 {
 		v.run_fetch()
+		v._n_executed_inst++
 	}
 }
