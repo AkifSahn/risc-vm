@@ -7,8 +7,7 @@ import (
 var machine vm.Vm = vm.NewVm()
 
 func main() {
-	// machine.LoadProgramFromFile("examples/factorial_recursive.asm")
-	machine.LoadProgramFromFile("examples/matmul.asm")
-	machine.RunSequential()
+	machine.LoadProgramFromFile("examples/pipeline_test.asm")
+	machine.RunPipelined()
 	machine.DumpStack(vm.DUMP_DEC)
 }

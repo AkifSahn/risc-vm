@@ -116,6 +116,11 @@ const WORD_SIZE = 4              // In bytes
 const MEM_SIZE = 100 * WORD_SIZE // 100 Words
 const STACK_SIZE = 400           // 32 words
 
+const (
+	STALL_RAW uint8 = 1 << iota
+	STALL_BRANCH
+)
+
 type Vm struct {
 	pc            int32
 	program       []Instruction
@@ -131,6 +136,7 @@ type Vm struct {
 
 	_cycle int
 	_halt  bool
+	_stall byte // A bitmap for different stalls?? Is this a good idea??
 }
 
 func NewVm() Vm {
@@ -227,6 +233,14 @@ func (v *Vm) SetProgram(program []Instruction) {
 	v._program_size = int32(len(program))
 }
 
+func (v *Vm) IsControlInstruction(inst Instruction) bool {
+	if inst._type == B || inst._type == J || inst.Op == Inst_Jalr {
+		return true
+	}
+
+	return false
+}
+
 func (v *Vm) Fetch() {
 	inst := v.program[v.pc]
 
@@ -245,6 +259,12 @@ func (v *Vm) Fetch() {
 		inst._type = J
 	}
 
+	// Check for Control hazards
+	if v.IsControlInstruction(inst) {
+		v._stall |= STALL_BRANCH
+		fmt.Println("Stall (BRANCH)")
+	}
+
 	v._fd_buff.inst = inst
 	v._fd_buff._is_empty = false
 	v.pc++
@@ -252,18 +272,68 @@ func (v *Vm) Fetch() {
 	v._fd_buff.pc = v.pc
 }
 
+// This function checks if we should stall in the decode stage or not based on the instruction.
+//
+// Checks for RAW(Read After Write) Data Hazard.
+func (v *Vm) ShouldStallDecode(inst Instruction) bool {
+	switch inst._type {
+	case R:
+		if v.registers[inst.Rs1].Busy || v.registers[inst.Rs2].Busy {
+			return true
+		}
+
+	case I:
+		if inst.Op == Inst_Load {
+			if v.registers[inst.Rs2].Busy {
+				return true
+			}
+		} else if v.registers[inst.Rs1].Busy {
+			return true
+		}
+
+	case S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
+		if v.registers[inst.Rd].Busy || v.registers[inst.Rs2].Busy {
+			return true
+		}
+
+	case B:
+		if v.registers[inst.Rd].Busy || v.registers[inst.Rs1].Busy {
+			return true
+		}
+
+	case U:
+		return false
+
+	case J:
+		return false
+	default:
+		panic(fmt.Sprintf("unexpected Inst_Type: %#v", inst._type))
+	}
+
+	return false
+}
+
 func (v *Vm) Decode() {
 	inst := v._fd_buff.inst
 	pc := v._fd_buff.pc
 	v._fd_buff._is_empty = true
 
-	// TODO: apply double buffer
-	// we may want to call an explicit write function for reading/writing from/to registers
+	if v.ShouldStallDecode(inst) {
+		v._stall |= STALL_RAW
+		v._fd_buff._is_empty = false
+		fmt.Println("Stall (RAW)")
+		return
+	} else if v._stall&STALL_RAW != 0 {
+		v._stall &= ^STALL_RAW
+	}
 
 	switch inst._type {
 	case R:
 		inst._s1 = v.registers[inst.Rs1].Data
 		inst._s2 = v.registers[inst.Rs2].Data
+
+		// Set the destination register as busy
+		v.registers[inst.Rd].Busy = true
 	case I:
 		// In load, immediate is placed in a different position so we check it explicitly.
 		if inst.Op == Inst_Load {
@@ -273,6 +343,9 @@ func (v *Vm) Decode() {
 			inst._s1 = v.registers[inst.Rs1].Data
 			inst._imm = inst.Rs2
 		}
+
+		// Set the destination register as busy
+		v.registers[inst.Rd].Busy = true
 	case S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._imm = inst.Rs1
@@ -283,8 +356,10 @@ func (v *Vm) Decode() {
 		inst._imm = inst.Rs2
 	case U:
 		inst._imm = inst.Rs1
+		v.registers[inst.Rd].Busy = true
 	case J:
 		inst._imm = inst.Rs1
+		v.registers[inst.Rd].Busy = true
 	}
 
 	v._dx_buff.inst = inst
@@ -377,10 +452,12 @@ func (v *Vm) Execute() {
 		inst._result = inst._imm
 	case Inst_Auipc:
 		inst._result = (pc - 1) + inst._imm
+	}
 
-		//Halting at execution stage, breaks the pipeline. So we will halt at the writeback instead
-		// case Inst_End:
-		// 	v._halt = true
+	// If this is a control instruction, we can stop the stall in this stage
+	// since we calculated the target pc
+	if v.IsControlInstruction(inst) {
+		v._stall &= ^STALL_BRANCH
 	}
 
 	v._xm_buff.inst = inst
@@ -391,6 +468,7 @@ func (v *Vm) Execute() {
 func (v *Vm) Memory() {
 	inst := v._xm_buff.inst
 	pc := v._xm_buff.pc
+	v._xm_buff._is_empty = true
 
 	if inst._type == B {
 		return
@@ -424,7 +502,6 @@ func (v *Vm) Memory() {
 
 func (v *Vm) Writeback() {
 	inst := v._mw_buff.inst
-	// pc := v._mw_buff.pc
 	v._mw_buff._is_empty = true
 
 	if inst.Op == Inst_End {
@@ -434,12 +511,15 @@ func (v *Vm) Writeback() {
 
 	// We don't want to writeback if instruction type is S
 	if inst._type == R || inst._type == I || inst._type == U || inst._type == J {
+		// set the destination register as free
+		v.registers[inst.Rd].Busy = false
+
 		// We don't allow writes to x0 register
 		if inst.Rd == 0 {
 			return
 		}
 
-		v.registers[inst.Rd].Data = inst._result // TODO: apply double buffer
+		v.registers[inst.Rd].Data = inst._result
 	}
 
 }
@@ -469,7 +549,7 @@ func (v *Vm) RunPipelined() {
 // This functions does exactly that, each stage has it's own instruction.
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
-	fmt.Printf("At cycle: %d\n", v._cycle)
+	fmt.Printf("\nAt cycle: %d\n", v._cycle)
 	if !v._mw_buff._is_empty && !v._halt {
 		v.Writeback()
 		fmt.Printf("\tinst %d -> Writeback()\n", v._mw_buff.pc)
@@ -485,12 +565,16 @@ func (v *Vm) ExecuteCycle() {
 		fmt.Printf("\tinst %d -> Execute()\n", v._dx_buff.pc)
 	}
 
+	// For now, only data hazard we can see is a RAW data hazard
+	// which requires stall insted of decoding. So if we signal a stall in the decode
+	// and don't fetch next instruction, in the next cycle we will try to decode the same instruction again
+	// since we are getting the instruction from the pipeline buffers
 	if !v._fd_buff._is_empty && !v._halt {
 		v.Decode()
 		fmt.Printf("\tinst %d -> Decode()\n", v._fd_buff.pc)
 	}
 
-	if v.pc < v._program_size && !v._halt {
+	if v.pc < v._program_size && !v._halt && v._stall == 0 {
 		v.Fetch()
 		fmt.Printf("\tinst %d -> Fetch()\n", v.pc)
 	}
