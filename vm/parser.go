@@ -118,10 +118,9 @@ func stringToOpcode(s string) Inst_Op {
 	case "end":
 		return Inst_End
 	default:
-		log.Fatalf("Unknown opcode '%s'\n", s)
+		log.Printf("Unknown opcode '%s'\n", s)
+		return _Inst_Unknown
 	}
-
-	return _Inst_Unknown
 }
 
 func expandPseudoInstruction(ps Instruction) []Instruction {
@@ -159,10 +158,10 @@ func expandPseudoInstruction(ps Instruction) []Instruction {
 		return []Instruction{newInstruction(Inst_Jal, 1, ps.Rd, 0)}
 	default:
 		// TODO: Better log
-		log.Fatalf("ERROR(parser) - Unknown pseudo instruction!")
+		log.Printf("ERROR(parser) - Unknown pseudo instruction!")
 	}
 
-	return []Instruction{Instruction{}}
+	return nil
 }
 
 // Symbol table holding label_str -> line_num
@@ -265,7 +264,8 @@ Returns 'nil' on failure.
 func ParseProgramFromFile(filename string) []Instruction {
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0)
 	if err != nil {
-		log.Fatalf("ERR - Failed to open file(%s): %s\n", filename, err.Error())
+		log.Printf("ERR - Failed to open file(%s): %s\n", filename, err.Error())
+		return nil
 	}
 	defer file.Close()
 
@@ -323,6 +323,10 @@ func ParseProgramFromFile(filename string) []Instruction {
 		inst, pass := parseInstructionLine(line)
 		if pass {
 			continue
+		}
+
+		if inst.Op == _Inst_Unknown {
+			return nil
 		}
 
 		if _Inst_Pseudo_start < inst.Op && inst.Op < _Inst_Pseudo_end {

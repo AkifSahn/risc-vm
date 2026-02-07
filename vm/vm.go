@@ -404,8 +404,9 @@ func (v *Vm) Execute() {
 	case Inst_Load: // load word
 		addr := inst._s1 + inst._imm
 		if addr%(WORD_SIZE) != 0 {
-			log.Fatalf("ERROR - Illegal read attempt from unaligned memory address: '%d'."+
+			log.Printf("ERROR - Illegal read attempt from unaligned memory address: '%d'."+
 				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
+			v._halt = true
 		}
 		inst._result = addr
 
@@ -421,8 +422,9 @@ func (v *Vm) Execute() {
 
 		// Calculated addr is in bytes and WORD_SIZE is in bytes. So convert WORD_SIZE to bits
 		if addr%(WORD_SIZE) != 0 {
-			log.Fatalf("ERROR - Illegal write attempt to unaligned memory address: '%d'."+
+			log.Printf("ERROR - Illegal write attempt to unaligned memory address: '%d'."+
 				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
+			v._halt = true
 		}
 
 		inst._result = addr // Each memory cell holds one byte
