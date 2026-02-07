@@ -9,6 +9,11 @@ type Inst_Op int
 type Inst_Type int
 
 const (
+	STALL_RAW uint8 = 1 << iota
+	STALL_BRANCH
+)
+
+const (
 	R Inst_Type = iota
 	I           // immediate
 	S           // store
@@ -79,11 +84,13 @@ const (
 	_Inst_Unknown
 )
 
-type Pipeline_Buffer struct {
-	pc        int32
-	inst      Instruction
-	_is_empty bool
-}
+type Dump_Format uint8
+
+const (
+	DUMP_BIN = iota
+	DUMP_HEX
+	DUMP_DEC
+)
 
 type Instruction struct {
 	Op  Inst_Op
@@ -112,14 +119,15 @@ type Register struct {
 	Busy bool
 }
 
+type Pipeline_Buffer struct {
+	pc        int32
+	inst      Instruction
+	_is_empty bool
+}
+
 const WORD_SIZE = 4              // In bytes
 const MEM_SIZE = 100 * WORD_SIZE // 100 Words
 const STACK_SIZE = 400           // 32 words
-
-const (
-	STALL_RAW uint8 = 1 << iota
-	STALL_BRANCH
-)
 
 type Vm struct {
 	pc            int32
@@ -154,14 +162,6 @@ func NewVm() Vm {
 
 	return vm
 }
-
-type Dump_Format uint8
-
-const (
-	DUMP_BIN = iota
-	DUMP_HEX
-	DUMP_DEC
-)
 
 func (v *Vm) DumpRegisters(format Dump_Format) {
 	fmt.Println("------------")
