@@ -196,7 +196,7 @@ var writer = bufio.NewWriter(os.Stdout)
 var read_writer *bufio.ReadWriter
 
 func main() {
-	machine = vm.NewVm()
+	machine = vm.CreateVm()
 
 	read_writer = bufio.NewReadWriter(reader, writer)
 	read_writer.WriteString("--- RISC-V Vm Cli --- ('help')\n")

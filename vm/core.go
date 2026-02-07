@@ -84,14 +84,6 @@ const (
 	_Inst_Unknown
 )
 
-type Dump_Format uint8
-
-const (
-	DUMP_BIN = iota
-	DUMP_HEX
-	DUMP_DEC
-)
-
 type Instruction struct {
 	Op  Inst_Op
 	Rd  int32
@@ -147,7 +139,7 @@ type Vm struct {
 	_stall byte // A bitmap for different stalls?? Is this a good idea??
 }
 
-func NewVm() Vm {
+func CreateVm() Vm {
 	vm := Vm{
 		program: make([]Instruction, 0),
 	}
@@ -163,64 +155,6 @@ func NewVm() Vm {
 	return vm
 }
 
-func (v *Vm) DumpRegisters(format Dump_Format) {
-	fmt.Println("------------")
-	fmt.Println("Register Dump: ")
-	for i, reg := range v.registers {
-		switch format {
-		case DUMP_BIN:
-			fmt.Printf("\033[0;33m%2d\033[0m = %.32b (binary)\n", i, reg.Data)
-		case DUMP_HEX:
-			fmt.Printf("\033[0;33m%2d\033[0m = %.4X (hex)\n", i, reg.Data)
-		case DUMP_DEC:
-			fmt.Printf("\033[0;33m%2d\033[0m = %d (decimal)\n", i, reg.Data)
-		}
-	}
-	fmt.Println("------------")
-}
-
-func (v *Vm) DumpMemory(start, end int, format Dump_Format) {
-	var val int32
-
-	for i := start; i < end; i += 4 {
-		val = int32(uint32(v.memory[i]) |
-			uint32(v.memory[i+1])<<8 |
-			uint32(v.memory[i+2])<<16 |
-			uint32(v.memory[i+3])<<24)
-
-		fmt.Printf("\033[0;33m%d\033[0m : ", i)
-		switch format {
-		case DUMP_BIN:
-			fmt.Printf("%.8b %.8b %.8b %.8b", v.memory[i], v.memory[i+1], v.memory[i+2], v.memory[i+3])
-			fmt.Printf(" = %.32b (binary)", val)
-		case DUMP_HEX:
-			fmt.Printf("%.2X %.2X %.2X %.2X", v.memory[i], v.memory[i+1], v.memory[i+2], v.memory[i+3])
-			fmt.Printf(" = %.4X (hex)", val)
-		case DUMP_DEC:
-			fmt.Printf("%3d %3d %3d %3d", v.memory[i], v.memory[i+1], v.memory[i+2], v.memory[i+3])
-			fmt.Printf(" = %d (decimal)", val)
-
-		}
-
-		if v.registers[abiToRegNum["sp"]].Data == int32(i) {
-			fmt.Print(" <- \033[0;31mSP\033[0m")
-		}
-		fmt.Println()
-	}
-}
-
-func (v *Vm) DumpStack(format Dump_Format) {
-	fmt.Println("------------")
-	fmt.Printf("Stack Dump: Sp = %d\n", v.registers[abiToRegNum["sp"]].Data)
-
-	s_start := MEM_SIZE - STACK_SIZE
-	s_end := MEM_SIZE
-
-	v.DumpMemory(s_start, s_end, format)
-
-	fmt.Println("------------")
-}
-
 func (v *Vm) LoadProgramFromFile(fileName string) {
 	// Parse the file etc...
 	program := ParseProgramFromFile(fileName)
@@ -233,7 +167,7 @@ func (v *Vm) SetProgram(program []Instruction) {
 	v._program_size = int32(len(program))
 }
 
-func (v *Vm) IsControlInstruction(inst Instruction) bool {
+func (v *Vm) isControlInstruction(inst Instruction) bool {
 	if inst._type == B || inst._type == J || inst.Op == Inst_Jalr {
 		return true
 	}
@@ -241,41 +175,10 @@ func (v *Vm) IsControlInstruction(inst Instruction) bool {
 	return false
 }
 
-func (v *Vm) Fetch() {
-	inst := v.program[v.pc]
-
-	// Determine the instruction type
-	if _Inst_R_start < inst.Op && inst.Op < _Inst_R_end {
-		inst._type = R
-	} else if _Inst_I_start < inst.Op && inst.Op < _Inst_I_end {
-		inst._type = I
-	} else if _Inst_S_start < inst.Op && inst.Op < _Inst_S_end {
-		inst._type = S
-	} else if _Inst_B_start < inst.Op && inst.Op < _Inst_B_end {
-		inst._type = B
-	} else if _Inst_U_start < inst.Op && inst.Op < _Inst_U_end {
-		inst._type = U
-	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
-		inst._type = J
-	}
-
-	// Check for Control hazards
-	if v.IsControlInstruction(inst) {
-		v._stall |= STALL_BRANCH
-		fmt.Println("Stall (BRANCH)")
-	}
-
-	v._fd_buff.inst = inst
-	v._fd_buff._is_empty = false
-	v.pc++
-
-	v._fd_buff.pc = v.pc
-}
-
 // This function checks if we should stall in the decode stage or not based on the instruction.
 //
 // Checks for RAW(Read After Write) Data Hazard.
-func (v *Vm) ShouldStallDecode(inst Instruction) bool {
+func (v *Vm) shouldStallDecode(inst Instruction) bool {
 	switch inst._type {
 	case R:
 		if v.registers[inst.Rs1].Busy || v.registers[inst.Rs2].Busy {
@@ -313,15 +216,44 @@ func (v *Vm) ShouldStallDecode(inst Instruction) bool {
 	return false
 }
 
-func (v *Vm) Decode() {
+func (v *Vm) run_fetch() {
+	inst := v.program[v.pc]
+
+	// Determine the instruction type
+	if _Inst_R_start < inst.Op && inst.Op < _Inst_R_end {
+		inst._type = R
+	} else if _Inst_I_start < inst.Op && inst.Op < _Inst_I_end {
+		inst._type = I
+	} else if _Inst_S_start < inst.Op && inst.Op < _Inst_S_end {
+		inst._type = S
+	} else if _Inst_B_start < inst.Op && inst.Op < _Inst_B_end {
+		inst._type = B
+	} else if _Inst_U_start < inst.Op && inst.Op < _Inst_U_end {
+		inst._type = U
+	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
+		inst._type = J
+	}
+
+	// Check for Control hazards
+	if v.isControlInstruction(inst) {
+		v._stall |= STALL_BRANCH
+	}
+
+	v._fd_buff.inst = inst
+	v._fd_buff._is_empty = false
+	v.pc++
+
+	v._fd_buff.pc = v.pc
+}
+
+func (v *Vm) run_decode() {
 	inst := v._fd_buff.inst
 	pc := v._fd_buff.pc
 	v._fd_buff._is_empty = true
 
-	if v.ShouldStallDecode(inst) {
+	if v.shouldStallDecode(inst) {
 		v._stall |= STALL_RAW
 		v._fd_buff._is_empty = false
-		fmt.Println("Stall (RAW)")
 		return
 	} else if v._stall&STALL_RAW != 0 {
 		v._stall &= ^STALL_RAW
@@ -367,7 +299,7 @@ func (v *Vm) Decode() {
 	v._dx_buff._is_empty = false
 }
 
-func (v *Vm) Execute() {
+func (v *Vm) run_execute() {
 	inst := v._dx_buff.inst
 	pc := v._dx_buff.pc
 	v._dx_buff._is_empty = true
@@ -458,7 +390,7 @@ func (v *Vm) Execute() {
 
 	// If this is a control instruction, we can stop the stall in this stage
 	// since we calculated the target pc
-	if v.IsControlInstruction(inst) {
+	if v.isControlInstruction(inst) {
 		v._stall &= ^STALL_BRANCH
 	}
 
@@ -467,7 +399,7 @@ func (v *Vm) Execute() {
 	v._xm_buff._is_empty = false
 }
 
-func (v *Vm) Memory() {
+func (v *Vm) run_memory() {
 	inst := v._xm_buff.inst
 	pc := v._xm_buff.pc
 	v._xm_buff._is_empty = true
@@ -502,7 +434,7 @@ func (v *Vm) Memory() {
 	v._mw_buff._is_empty = false
 }
 
-func (v *Vm) Writeback() {
+func (v *Vm) run_writeback() {
 	inst := v._mw_buff.inst
 	v._mw_buff._is_empty = true
 
@@ -529,17 +461,16 @@ func (v *Vm) Writeback() {
 func (v *Vm) RunSequential() {
 	for !v._halt {
 		v._cycle++
-		v.Fetch()
-		v.Decode()
-		v.Execute()
-		v.Memory()
-		v.Writeback()
+		v.run_fetch()
+		v.run_decode()
+		v.run_execute()
+		v.run_memory()
+		v.run_writeback()
 	}
 }
 
 func (v *Vm) RunPipelined() {
 	for !v._halt {
-		v._cycle++
 		v.ExecuteCycle()
 	}
 }
@@ -551,20 +482,17 @@ func (v *Vm) RunPipelined() {
 // This functions does exactly that, each stage has it's own instruction.
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
-	fmt.Printf("\nAt cycle: %d\n", v._cycle)
+	v._cycle++
 	if !v._mw_buff._is_empty && !v._halt {
-		v.Writeback()
-		fmt.Printf("\tinst %d -> Writeback()\n", v._mw_buff.pc)
+		v.run_writeback()
 	}
 
 	if !v._xm_buff._is_empty && !v._halt {
-		v.Memory()
-		fmt.Printf("\tinst %d -> Memory()\n", v._xm_buff.pc)
+		v.run_memory()
 	}
 
 	if !v._dx_buff._is_empty && !v._halt {
-		v.Execute()
-		fmt.Printf("\tinst %d -> Execute()\n", v._dx_buff.pc)
+		v.run_execute()
 	}
 
 	// For now, only data hazard we can see is a RAW data hazard
@@ -572,12 +500,10 @@ func (v *Vm) ExecuteCycle() {
 	// and don't fetch next instruction, in the next cycle we will try to decode the same instruction again
 	// since we are getting the instruction from the pipeline buffers
 	if !v._fd_buff._is_empty && !v._halt {
-		v.Decode()
-		fmt.Printf("\tinst %d -> Decode()\n", v._fd_buff.pc)
+		v.run_decode()
 	}
 
 	if v.pc < v._program_size && !v._halt && v._stall == 0 {
-		v.Fetch()
-		fmt.Printf("\tinst %d -> Fetch()\n", v.pc)
+		v.run_fetch()
 	}
 }

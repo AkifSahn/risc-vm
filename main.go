@@ -4,10 +4,10 @@ import (
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
-var machine vm.Vm = vm.NewVm()
+var machine vm.Vm = vm.CreateVm()
 
 func main() {
-	machine.LoadProgramFromFile("examples/pipeline_test.asm")
+	machine.LoadProgramFromFile("examples/matmul.asm")
 	machine.RunPipelined()
 	machine.DumpStack(vm.DUMP_DEC)
 }
