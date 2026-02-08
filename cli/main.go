@@ -189,14 +189,17 @@ func (cmd Cmd) Handle() {
 	}
 }
 
-var machine vm.Vm
+var machine *vm.Vm
 
 var reader = bufio.NewReader(os.Stdin)
 var writer = bufio.NewWriter(os.Stdout)
 var read_writer *bufio.ReadWriter
 
+const MEM_SIZE = 400
+const STACk_SIZE = 200
+
 func main() {
-	machine = vm.CreateVm()
+	machine = vm.CreateVm(MEM_SIZE, STACk_SIZE)
 
 	read_writer = bufio.NewReadWriter(reader, writer)
 	read_writer.WriteString("--- RISC-V Vm Cli --- ('help')\n")

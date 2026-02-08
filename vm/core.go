@@ -117,17 +117,17 @@ type Pipeline_Buffer struct {
 	_is_empty bool
 }
 
-const WORD_SIZE = 4              // In bytes
-const MEM_SIZE = 100 * WORD_SIZE // 100 Words
-const STACK_SIZE = 400           // 32 words
+const WORD_SIZE = 4 // In bytes
 
 type Vm struct {
 	pc            int32
 	program       []Instruction
 	_program_size int32
 
-	registers [32]Register
-	memory    [MEM_SIZE]byte
+	registers   [32]Register
+	memory      []byte
+	_mem_size   int // In bytes
+	_stack_size int // In bytes
 
 	_fd_buff Pipeline_Buffer
 	_dx_buff Pipeline_Buffer
@@ -140,21 +140,48 @@ type Vm struct {
 	Dm Diagnostics_Manager
 }
 
-func CreateVm() Vm {
+func CreateVm(mem_size, stack_size int) *Vm {
+	if mem_size <= 0 || stack_size <= 0 {
+		fmt.Println("Memory/stack size must be non-zero!")
+		return nil
+	}
+
+	if mem_size%WORD_SIZE != 0 {
+		fmt.Printf("Invalid memory size '%d', Memory size must be a multiple of word size(%d).",
+			mem_size, WORD_SIZE)
+		return nil
+	}
+
+	if stack_size%WORD_SIZE != 0 {
+		fmt.Printf("Invalid stack size '%d', Stack size must be a multiple of word size(%d).",
+			mem_size, WORD_SIZE)
+		return nil
+	}
+
+	if stack_size > mem_size {
+		fmt.Printf("Stack(%d) size can not be bigger than memory size(%d).",
+			stack_size, mem_size)
+		return nil
+	}
+
 	vm := Vm{
-		program: make([]Instruction, 0),
-		Dm: CreateDiagnosticsManager(),
+		program:     make([]Instruction, 0),
+		memory:      make([]byte, mem_size),
+		Dm:          CreateDiagnosticsManager(),
+
+		_mem_size:   mem_size,
+		_stack_size: stack_size,
 	}
 
 	// Initialize stack pointer to the MAX_ADDR
-	vm.registers[abiToRegNum["sp"]].Data = MEM_SIZE
+	vm.registers[abiToRegNum["sp"]].Data = int32(mem_size)
 
 	vm._fd_buff._is_empty = true
 	vm._dx_buff._is_empty = true
 	vm._xm_buff._is_empty = true
 	vm._mw_buff._is_empty = true
 
-	return vm
+	return &vm
 }
 
 func (v *Vm) LoadProgramFromFile(fileName string) {
