@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
@@ -13,7 +11,7 @@ var machine* vm.Vm = vm.CreateVm(MEM_SIZE, STACK_SIZE)
 
 func main() {
 	machine.LoadProgramFromFile("examples/matmul.asm")
-	machine.RunSequential()
+	machine.RunPipelined()
 	machine.DumpStack(vm.DUMP_DEC)
-	fmt.Printf("CPI = %f\n", machine.Dm.CalculateCpi())
+	machine.Dm.PrintDiagnostics()
 }

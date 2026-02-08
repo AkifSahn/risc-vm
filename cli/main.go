@@ -199,11 +199,16 @@ const MEM_SIZE = 400
 const STACk_SIZE = 200
 
 func main() {
-	machine = vm.CreateVm(MEM_SIZE, STACk_SIZE)
-
 	read_writer = bufio.NewReadWriter(reader, writer)
 	read_writer.WriteString("--- RISC-V Vm Cli --- ('help')\n")
 	read_writer.Flush()
+
+	machine = vm.CreateVm(MEM_SIZE, STACk_SIZE)
+	if machine == nil {
+		read_writer.WriteString("Failed to create vm!\n")
+		read_writer.Flush()
+		os.Exit(1)
+	}
 
 	for {
 		read_writer.WriteString("> ")

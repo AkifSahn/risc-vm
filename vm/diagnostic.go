@@ -32,6 +32,16 @@ func (dm *Diagnostics_Manager) CalculateCpi() float32 {
 	return float32(dm.n_cycle) / float32(dm.n_executed_inst)
 }
 
+func (dm *Diagnostics_Manager) PrintDiagnostics() {
+	fmt.Println("--- Diagnostics ---")
+	fmt.Printf("%-30s %d\n", "Program size:", dm.program_size)
+	fmt.Printf("%-30s %.2f\n", "CPI:", dm.CalculateCpi())
+	fmt.Printf("%-30s %d\n", "instructions executed:", dm.n_executed_inst)
+	fmt.Printf("%-30s %d\n", "cycles:", dm.n_cycle)
+	fmt.Printf("%-30s %d\n", "stalls:", dm.n_stalls)
+	fmt.Println("--- end of diagnostics ---")
+}
+
 func (v *Vm) PrintRegister(reg_str string) {
 	reg_num, ok := abiToRegNum[reg_str]
 	if !ok {

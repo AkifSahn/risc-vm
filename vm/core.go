@@ -120,9 +120,8 @@ type Pipeline_Buffer struct {
 const WORD_SIZE = 4 // In bytes
 
 type Vm struct {
-	pc            int32
-	program       []Instruction
-	_program_size int32
+	pc      int32
+	program []Instruction
 
 	registers   [32]Register
 	memory      []byte
@@ -147,27 +146,27 @@ func CreateVm(mem_size, stack_size int) *Vm {
 	}
 
 	if mem_size%WORD_SIZE != 0 {
-		fmt.Printf("Invalid memory size '%d', Memory size must be a multiple of word size(%d).",
+		fmt.Printf("Invalid memory size '%d', Memory size must be a multiple of word size(%d).\n",
 			mem_size, WORD_SIZE)
 		return nil
 	}
 
 	if stack_size%WORD_SIZE != 0 {
-		fmt.Printf("Invalid stack size '%d', Stack size must be a multiple of word size(%d).",
+		fmt.Printf("Invalid stack size '%d', Stack size must be a multiple of word size(%d).\n",
 			mem_size, WORD_SIZE)
 		return nil
 	}
 
 	if stack_size > mem_size {
-		fmt.Printf("Stack(%d) size can not be bigger than memory size(%d).",
+		fmt.Printf("Stack(%d) size can not be bigger than memory size(%d).\n",
 			stack_size, mem_size)
 		return nil
 	}
 
 	vm := Vm{
-		program:     make([]Instruction, 0),
-		memory:      make([]byte, mem_size),
-		Dm:          CreateDiagnosticsManager(),
+		program: make([]Instruction, 0),
+		memory:  make([]byte, mem_size),
+		Dm:      CreateDiagnosticsManager(),
 
 		_mem_size:   mem_size,
 		_stack_size: stack_size,
@@ -193,7 +192,12 @@ func (v *Vm) LoadProgramFromFile(fileName string) {
 func (v *Vm) SetProgram(program []Instruction) {
 	v.pc = 0
 	v.program = program
-	v._program_size = int32(len(program))
+
+	// Reset the Diagnostics_Manager
+	v.Dm.program_size = uint(len(program))
+	v.Dm.n_cycle = 0
+	v.Dm.n_stalls = 0
+	v.Dm.n_executed_inst = 0
 }
 
 func (v *Vm) isControlInstruction(inst Instruction) bool {
@@ -534,7 +538,12 @@ func (v *Vm) ExecuteCycle() {
 		v.run_decode()
 	}
 
-	if v.pc < v._program_size && !v._halt && v._stall == 0 {
+	// For diagnostic purposes
+	if v._stall > 0{
+		v.Dm.n_stalls++
+	}
+
+	if uint(v.pc) < v.Dm.program_size && !v._halt && v._stall == 0 {
 		v.run_fetch()
 		v.Dm.n_executed_inst++
 	}
