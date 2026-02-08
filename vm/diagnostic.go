@@ -13,14 +13,23 @@ const (
 	DUMP_DEC
 )
 
-func (v *Vm) CalculateCpi() float32{
-	if !v._halt || v._cycle <= 0{
-		fmt.Printf("Run the program first!")
+type Diagnostics_Manager struct {
+	program_size    uint
+	n_executed_inst uint
+	n_cycle         uint
+	n_stalls        uint
+}
+
+func CreateDiagnosticsManager() Diagnostics_Manager {
+	return Diagnostics_Manager{}
+}
+
+func (dm *Diagnostics_Manager) CalculateCpi() float32 {
+	if dm.n_cycle <= 0 && dm.n_executed_inst <= 0 {
 		return -1
 	}
 
-	fmt.Printf("size = %d\n", v._program_size)
-	return float32(v._cycle)/float32(v._n_executed_inst)
+	return float32(dm.n_cycle) / float32(dm.n_executed_inst)
 }
 
 func (v *Vm) PrintRegister(reg_str string) {

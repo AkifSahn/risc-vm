@@ -12,5 +12,5 @@ func main() {
 	machine.LoadProgramFromFile("examples/matmul.asm")
 	machine.RunSequential()
 	machine.DumpStack(vm.DUMP_DEC)
-	fmt.Printf("CPI = %f\n", machine.CalculateCpi())
+	fmt.Printf("CPI = %f\n", machine.Dm.CalculateCpi())
 }

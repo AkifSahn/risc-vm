@@ -134,16 +134,16 @@ type Vm struct {
 	_xm_buff Pipeline_Buffer
 	_mw_buff Pipeline_Buffer
 
-	_cycle int
 	_halt  bool
 	_stall byte // A bitmap for different stalls?? Is this a good idea??
 
-	_n_executed_inst int
+	Dm Diagnostics_Manager
 }
 
 func CreateVm() Vm {
 	vm := Vm{
 		program: make([]Instruction, 0),
+		Dm: CreateDiagnosticsManager(),
 	}
 
 	// Initialize stack pointer to the MAX_ADDR
@@ -468,8 +468,8 @@ func (v *Vm) RunSequential() {
 		v.run_memory()
 		v.run_writeback()
 
-		v._cycle += 5
-		v._n_executed_inst++
+		v.Dm.n_cycle += 5
+		v.Dm.n_executed_inst++
 	}
 }
 
@@ -486,7 +486,7 @@ func (v *Vm) RunPipelined() {
 // This functions does exactly that, each stage has it's own instruction.
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
-	v._cycle++
+	v.Dm.n_cycle++
 	if !v._mw_buff._is_empty && !v._halt {
 		v.run_writeback()
 	}
@@ -509,6 +509,6 @@ func (v *Vm) ExecuteCycle() {
 
 	if v.pc < v._program_size && !v._halt && v._stall == 0 {
 		v.run_fetch()
-		v._n_executed_inst++
+		v.Dm.n_executed_inst++
 	}
 }
