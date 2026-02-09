@@ -133,8 +133,11 @@ type Vm struct {
 	_xm_buff Pipeline_Buffer
 	_mw_buff Pipeline_Buffer
 
-	_halt  bool
-	_stall byte // A bitmap for different stalls?? Is this a good idea??
+	_halt bool
+
+	// A bitmap for different stalls.
+	// Each stall is same in principle, but their cause may be different.
+	_stall_map byte
 
 	Dm Diagnostics_Manager
 }
@@ -267,11 +270,6 @@ func (v *Vm) run_fetch() {
 		inst._type = J
 	}
 
-	// Check for Control hazards
-	if v.isControlInstruction(inst) {
-		v._stall |= STALL_BRANCH
-	}
-
 	v._fd_buff.inst = inst
 	v._fd_buff._is_empty = false
 	v.pc++
@@ -284,12 +282,18 @@ func (v *Vm) run_decode() {
 	pc := v._fd_buff.pc
 	v._fd_buff._is_empty = true
 
+	// Do not issue this instruction!
 	if v.shouldStallDecode(inst) {
-		v._stall |= STALL_RAW
+		v._stall_map |= STALL_RAW
 		v._fd_buff._is_empty = false
 		return
-	} else if v._stall&STALL_RAW != 0 {
-		v._stall &= ^STALL_RAW
+	} else if v._stall_map&STALL_RAW != 0 {
+		v._stall_map &= ^STALL_RAW
+	}
+
+	// If this is a branch instruction, stall the fetch until the branch addr is calculated
+	if v.isControlInstruction(inst) {
+		v._stall_map |= STALL_BRANCH
 	}
 
 	switch inst._type {
@@ -421,10 +425,9 @@ func (v *Vm) run_execute() {
 		inst._result = (pc - 1) + inst._imm
 	}
 
-	// If this is a control instruction, we can stop the stall in this stage
-	// since we calculated the target pc
+	// Branch address is calculated, we can stop stalling.
 	if v.isControlInstruction(inst) {
-		v._stall &= ^STALL_BRANCH
+		v._stall_map &= ^STALL_BRANCH
 	}
 
 	v._xm_buff.inst = inst
@@ -539,11 +542,11 @@ func (v *Vm) ExecuteCycle() {
 	}
 
 	// For diagnostic purposes
-	if v._stall > 0{
+	if v._stall_map > 0 {
 		v.Dm.n_stalls++
 	}
 
-	if uint(v.pc) < v.Dm.program_size && !v._halt && v._stall == 0 {
+	if uint(v.pc) < v.Dm.program_size && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
 		v.Dm.n_executed_inst++
 	}
