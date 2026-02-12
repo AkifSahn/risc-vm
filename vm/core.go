@@ -112,9 +112,9 @@ type Register struct {
 }
 
 type Pipeline_Buffer struct {
-	pc        int32
-	inst      Instruction
-	_is_empty bool
+	pc    int32
+	inst  Instruction
+	valid bool
 }
 
 const WORD_SIZE = 4 // In bytes
@@ -128,10 +128,10 @@ type Vm struct {
 	_mem_size   int // In bytes
 	_stack_size int // In bytes
 
-	_fd_buff Pipeline_Buffer
-	_dx_buff Pipeline_Buffer
-	_xm_buff Pipeline_Buffer
-	_mw_buff Pipeline_Buffer
+	_fd_buff [2]Pipeline_Buffer
+	_dx_buff [2]Pipeline_Buffer
+	_xm_buff [2]Pipeline_Buffer
+	_mw_buff [2]Pipeline_Buffer
 
 	_halt bool
 
@@ -177,11 +177,6 @@ func CreateVm(mem_size, stack_size int) *Vm {
 
 	// Initialize stack pointer to the MAX_ADDR
 	vm.registers[abiToRegNum["sp"]].Data = int32(mem_size)
-
-	vm._fd_buff._is_empty = true
-	vm._dx_buff._is_empty = true
-	vm._xm_buff._is_empty = true
-	vm._mw_buff._is_empty = true
 
 	return &vm
 }
@@ -270,22 +265,25 @@ func (v *Vm) run_fetch() {
 		inst._type = J
 	}
 
-	v._fd_buff.inst = inst
-	v._fd_buff._is_empty = false
 	v.pc++
 
-	v._fd_buff.pc = v.pc
+	v._fd_buff[0].inst = inst
+	v._fd_buff[0].pc = v.pc
+	v._fd_buff[0].valid = true
 }
 
 func (v *Vm) run_decode() {
-	inst := v._fd_buff.inst
-	pc := v._fd_buff.pc
-	v._fd_buff._is_empty = true
+	inst := v._fd_buff[1].inst
+	pc := v._fd_buff[1].pc
 
 	// Do not issue this instruction!
 	if v.shouldStallDecode(inst) {
 		v._stall_map |= STALL_RAW
-		v._fd_buff._is_empty = false
+
+		// Feed the IF/ID buffer to itself to avoid draining it
+		v._fd_buff[0] = v._fd_buff[1]
+		v._fd_buff[0].valid = true
+
 		return
 	} else if v._stall_map&STALL_RAW != 0 {
 		v._stall_map &= ^STALL_RAW
@@ -331,15 +329,14 @@ func (v *Vm) run_decode() {
 		v.registers[inst.Rd].Busy = true
 	}
 
-	v._dx_buff.inst = inst
-	v._dx_buff.pc = pc
-	v._dx_buff._is_empty = false
+	v._dx_buff[0].inst = inst
+	v._dx_buff[0].pc = pc
+	v._dx_buff[0].valid = true
 }
 
 func (v *Vm) run_execute() {
-	inst := v._dx_buff.inst
-	pc := v._dx_buff.pc
-	v._dx_buff._is_empty = true
+	inst := v._dx_buff[1].inst
+	pc := v._dx_buff[1].pc
 
 	switch inst.Op {
 	case Inst_Add:
@@ -430,15 +427,14 @@ func (v *Vm) run_execute() {
 		v._stall_map &= ^STALL_BRANCH
 	}
 
-	v._xm_buff.inst = inst
-	v._xm_buff.pc = pc
-	v._xm_buff._is_empty = false
+	v._xm_buff[0].inst = inst
+	v._xm_buff[0].pc = pc
+	v._xm_buff[0].valid = true
 }
 
 func (v *Vm) run_memory() {
-	inst := v._xm_buff.inst
-	pc := v._xm_buff.pc
-	v._xm_buff._is_empty = true
+	inst := v._xm_buff[1].inst
+	pc := v._xm_buff[1].pc
 
 	if inst._type == B {
 		return
@@ -465,14 +461,13 @@ func (v *Vm) run_memory() {
 	}
 
 	// TODO: should we handle B-type differently??
-	v._mw_buff.inst = inst
-	v._mw_buff.pc = pc
-	v._mw_buff._is_empty = false
+	v._mw_buff[0].inst = inst
+	v._mw_buff[0].pc = pc
+	v._mw_buff[0].valid = true
 }
 
 func (v *Vm) run_writeback() {
-	inst := v._mw_buff.inst
-	v._mw_buff._is_empty = true
+	inst := v._mw_buff[1].inst
 
 	if inst.Op == Inst_End {
 		v._halt = true
@@ -521,23 +516,20 @@ func (v *Vm) RunPipelined() {
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
 	v.Dm.n_cycle++
-	if !v._mw_buff._is_empty && !v._halt {
+
+	if v._mw_buff[1].valid && !v._halt {
 		v.run_writeback()
 	}
 
-	if !v._xm_buff._is_empty && !v._halt {
+	if v._xm_buff[1].valid && !v._halt {
 		v.run_memory()
 	}
 
-	if !v._dx_buff._is_empty && !v._halt {
+	if v._dx_buff[1].valid && !v._halt {
 		v.run_execute()
 	}
 
-	// For now, only data hazard we can see is a RAW data hazard
-	// which requires stall insted of decoding. So if we signal a stall in the decode
-	// and don't fetch next instruction, in the next cycle we will try to decode the same instruction again
-	// since we are getting the instruction from the pipeline buffers
-	if !v._fd_buff._is_empty && !v._halt {
+	if v._fd_buff[1].valid && !v._halt {
 		v.run_decode()
 	}
 
@@ -546,8 +538,44 @@ func (v *Vm) ExecuteCycle() {
 		v.Dm.n_stalls++
 	}
 
+	// If no stall, fetch the next instruction
 	if uint(v.pc) < v.Dm.program_size && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
 		v.Dm.n_executed_inst++
+	}
+
+	v.shiftPipelineBuffers()
+}
+
+/*
+This function shifts the double-buffered pipeline buffers.
+That means moving the WRITE buffer to its corresponding READ buffer.
+
+After this operation, WRITE buffer becomes empty.
+If WRITE buffer was already empty beforehand, this also empties the READ buffer.
+Thus draining the pipeline buffer completely.
+
+This function does not deal with stall conditions.
+At stall, the READ part must fed back to the WRITE part so that the buffer is not drained.
+*/
+func (v *Vm) shiftPipelineBuffers() {
+	{
+		v._fd_buff[1] = v._fd_buff[0]
+		v._fd_buff[0].valid = false
+	}
+
+	{
+		v._dx_buff[1] = v._dx_buff[0]
+		v._dx_buff[0].valid = false
+	}
+
+	{
+		v._xm_buff[1] = v._xm_buff[0]
+		v._xm_buff[0].valid = false
+	}
+
+	{
+		v._mw_buff[1] = v._mw_buff[0]
+		v._mw_buff[0].valid = false
 	}
 }

@@ -12,6 +12,6 @@ var machine* vm.Vm = vm.CreateVm(MEM_SIZE, STACK_SIZE)
 func main() {
 	machine.LoadProgramFromFile("examples/matmul.asm")
 	machine.RunPipelined()
-	machine.DumpRegisters(vm.DUMP_DEC)
+	machine.DumpStack(vm.DUMP_DEC)
 	machine.Dm.PrintDiagnostics()
 }
