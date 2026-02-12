@@ -90,11 +90,12 @@ type Instruction struct {
 	Rs1 int32
 	Rs2 int32
 
-	_s1     int32
-	_s2     int32
-	_imm    int32
-	_result int32
-	_type   Inst_Type
+	_s1           int32
+	_s2           int32
+	_imm          int32
+	_result       int32
+	_type         Inst_Type
+	_ex_remaining int // Number of executions remaining
 }
 
 func newInstruction(Op Inst_Op, Rd int32, Rs1 int32, Rs2 int32) Instruction {
@@ -134,6 +135,8 @@ type Vm struct {
 	_mw_buff [2]Pipeline_Buffer
 
 	_halt bool
+
+	_instCycleTable map[Inst_Op]int
 
 	// A bitmap for different stalls.
 	// Each stall is same in principle, but their cause may be different.
@@ -178,6 +181,15 @@ func CreateVm(mem_size, stack_size int) *Vm {
 	// Initialize stack pointer to the MAX_ADDR
 	vm.registers[abiToRegNum["sp"]].Data = int32(mem_size)
 
+	// Fill the instCycleTable to default values
+	{
+		vm._instCycleTable = map[Inst_Op]int{
+			Inst_Mul: 3,
+			Inst_Div: 3,
+			Inst_Rem: 3,
+		}
+	}
+
 	return &vm
 }
 
@@ -210,6 +222,11 @@ func (v *Vm) isControlInstruction(inst Instruction) bool {
 //
 // Checks for RAW(Read After Write) Data Hazard.
 func (v *Vm) shouldStallDecode(inst Instruction) bool {
+	// If write buff of ID/EX is valid(written by some other inst)
+	if v._dx_buff[0].valid {
+		return true
+	}
+
 	switch inst._type {
 	case R:
 		if v.registers[inst.Rs1].Busy || v.registers[inst.Rs2].Busy {
@@ -263,6 +280,14 @@ func (v *Vm) run_fetch() {
 		inst._type = U
 	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
 		inst._type = J
+	}
+
+	{
+		n, ok := v._instCycleTable[inst.Op]
+		if !ok {
+			n = 1 // Default number of cycles in ex is 1
+		}
+		inst._ex_remaining = n
 	}
 
 	v.pc++
@@ -337,6 +362,17 @@ func (v *Vm) run_decode() {
 func (v *Vm) run_execute() {
 	inst := v._dx_buff[1].inst
 	pc := v._dx_buff[1].pc
+
+	inst._ex_remaining--
+
+	// Handle multi cycle instructions
+	// Fed the read buffer back to write if need more cycles to execute
+	if inst._ex_remaining > 0 {
+		v._dx_buff[0] = v._dx_buff[1]
+		v._dx_buff[0].inst._ex_remaining = inst._ex_remaining // Propagate the ex_remaining
+		v._dx_buff[0].valid = true
+		return
+	}
 
 	switch inst.Op {
 	case Inst_Add:
