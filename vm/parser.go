@@ -7,6 +7,81 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
+)
+
+type Inst_Op int
+type Inst_Fmt int
+
+const (
+	Fmt_R Inst_Fmt = iota
+	Fmt_I          // immediate
+	Fmt_S          // store
+	Fmt_B          // branch
+	Fmt_U          // Upper immediate
+	Fmt_J
+)
+
+const (
+	Inst_Nop Inst_Op = iota
+
+	_Inst_R_start
+	Inst_Add
+	Inst_Sub
+	Inst_Mul
+	Inst_Div
+	Inst_Rem
+	Inst_Xor
+	Inst_Or
+	Inst_And
+	_Inst_R_end
+
+	_Inst_I_start
+	Inst_Addi
+	Inst_Subi
+	Inst_Xori
+	Inst_Load
+	Inst_Ori
+	Inst_Andi
+	Inst_Jalr // Jump And Link Reg
+	Inst_Slli
+	_Inst_I_end
+
+	_Inst_S_start
+	Inst_Store // store-word
+	_Inst_S_end
+
+	_Inst_B_start
+	Inst_Beq
+	Inst_Bne
+	Inst_Blt
+	Inst_Bge
+	_Inst_B_end
+
+	_Inst_J_start
+	Inst_Jal // Jump And Link
+	_Inst_J_end
+
+	_Inst_U_start
+	Inst_Lui
+	Inst_Auipc
+	_Inst_U_end
+
+	_Inst_Pseudo_start
+	Inst_Mv
+	Inst_Not
+	Inst_Neg
+	Inst_Li
+	Inst_Jr
+	Inst_Ret
+	Inst_Ble
+	Inst_Bgt
+	Inst_J
+	Inst_Call
+	_Inst_Pseudo_end
+
+	Inst_End
+	_Inst_Unknown
 )
 
 var abiToRegNum = map[string]int{
@@ -123,26 +198,50 @@ func stringToOpcode(s string) Inst_Op {
 	}
 }
 
-func expandPseudoInstruction(ps Instruction) []Instruction {
+type Token struct {
+	Pos int
+	Val string
+}
+
+func getInstructionFmt(inst Instruction) Inst_Fmt {
+	// Determine the instruction type
+	if _Inst_R_start < inst.Op && inst.Op < _Inst_R_end {
+		return Fmt_R
+	} else if _Inst_I_start < inst.Op && inst.Op < _Inst_I_end {
+		return Fmt_I
+	} else if _Inst_S_start < inst.Op && inst.Op < _Inst_S_end {
+		return Fmt_S
+	} else if _Inst_B_start < inst.Op && inst.Op < _Inst_B_end {
+		return Fmt_B
+	} else if _Inst_U_start < inst.Op && inst.Op < _Inst_U_end {
+		return Fmt_U
+	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
+		return Fmt_J
+	}
+
+	return Fmt_R
+}
+
+func expandPseudoInstruction(ps Instruction) Instruction {
 	switch ps.Op {
 	case Inst_Mv: //  addi rd, rs, 0 Copy register
-		return []Instruction{newInstruction(Inst_Addi, ps.Rd, ps.Rs1, 0)}
+		return newInstruction(Inst_Addi, ps.Rd, ps.Rs1, 0)
 	case Inst_Not: // xori rd, rs, -1 One’s complement
-		return []Instruction{newInstruction(Inst_Xori, ps.Rd, ps.Rs1, -1)}
+		return newInstruction(Inst_Xori, ps.Rd, ps.Rs1, -1)
 	case Inst_Neg: // sub rd, x0, rs Two’s complement
-		return []Instruction{newInstruction(Inst_Sub, ps.Rd, 0, ps.Rs1)}
+		return newInstruction(Inst_Sub, ps.Rd, 0, ps.Rs1)
 	case Inst_Li: // addi Rd x0 imm(Rs1) Load immediate
-		return []Instruction{newInstruction(Inst_Addi, ps.Rd, 0, ps.Rs1)}
+		return newInstruction(Inst_Addi, ps.Rd, 0, ps.Rs1)
 	case Inst_Jr: // jalr x0, rs, 0 Jump register
-		return []Instruction{newInstruction(Inst_Jalr, 0, ps.Rd, 0)}
+		return newInstruction(Inst_Jalr, 0, ps.Rd, 0)
 	case Inst_Ret: // jalr x0, x1, 0 Return from subroutine
-		return []Instruction{newInstruction(Inst_Jalr, 0, 1, 0)}
+		return newInstruction(Inst_Jalr, 0, 1, 0)
 	case Inst_Ble:
-		return []Instruction{newInstruction(Inst_Bge, ps.Rs1, ps.Rd, ps.Rs2)}
+		return newInstruction(Inst_Bge, ps.Rs1, ps.Rd, ps.Rs2)
 	case Inst_Bgt:
-		return []Instruction{newInstruction(Inst_Blt, ps.Rs1, ps.Rd, ps.Rs2)}
+		return newInstruction(Inst_Blt, ps.Rs1, ps.Rd, ps.Rs2)
 	case Inst_J:
-		return []Instruction{newInstruction(Inst_Jal, 0, ps.Rd, 0)}
+		return newInstruction(Inst_Jal, 0, ps.Rd, 0)
 
 	/* Based on the risc-v manual, call expands to two instructions:
 	call offset:
@@ -155,13 +254,10 @@ func expandPseudoInstruction(ps Instruction) []Instruction {
 	since it can handle any length jumps
 	*/
 	case Inst_Call:
-		return []Instruction{newInstruction(Inst_Jal, 1, ps.Rd, 0)}
+		return newInstruction(Inst_Jal, 1, ps.Rd, 0)
 	default:
-		// TODO: Better log
-		log.Printf("ERROR(parser) - Unknown pseudo instruction!")
+		return ps
 	}
-
-	return nil
 }
 
 // Symbol table holding label_str -> line_num
@@ -169,98 +265,93 @@ type Symbol_Table map[string]int
 
 var symbol_table = make(Symbol_Table)
 
+var insts_missing_label = make(map[int]string, 0)
+
 var line_num int
 
 func parseRegisterValue(s string) int32 {
+	// Register
 	if val, ok := abiToRegNum[s]; ok {
 		return int32(val)
 	}
 
-	// Check the symbol_table if this is a label we have seen before
+	// Immediate value
+	if val, err := strconv.Atoi(s); err == nil {
+		return int32(val)
+	}
+
+	// Label
 	if val, ok := symbol_table[s]; ok {
 		return int32(val - line_num)
 	}
 
-	val, err := strconv.Atoi(s)
-	if err != nil {
-		log.Fatalf("ERR(parser): field is not a valid register, an immediate value or a label name! - '%s'", s)
-	}
+	// Label is not in the symbol_table yet
+	insts_missing_label[line_num] = s
 
-	return int32(val)
+	return -1
 }
 
-func doesLineDeclareLabel(line string) bool {
-	if line == "" {
-		return false
+func tokenizeLine(line string) []Token {
+	var sb strings.Builder
+
+	tokens := make([]Token, 0, 5)
+	tok_pos := 0
+
+	appendTok := func() {
+		if sb.Len() == 0 {
+			return
+		}
+
+		tok := Token{Val: sb.String(), Pos: tok_pos}
+		tokens = append(tokens, tok)
+		tok_pos++
+
+		sb.Reset()
 	}
 
-	tokens := strings.Split(line, ":")
+	for _, ch := range line {
+		// This is a comment line, stop tokenizing
+		if ch == ';' {
+			appendTok()
+			return tokens
+		}
 
-	// Line does not contain ':' sep. Not a label
-	if len(tokens) == 1 {
-		return false
+		if unicode.IsSpace(ch) || ch == '(' || ch == ')' || ch == ',' || ch == ':' {
+			if ch == ':' { // ':' is both seperator and a token
+				appendTok()
+				sb.WriteRune(':')
+				appendTok()
+				tok_pos = 0 // If an instruction follows a label declaration, pos should be relative to the opcode
+				continue
+			}
+
+			appendTok()
+			continue
+		}
+
+		sb.WriteRune(ch)
 	}
 
-	return true
+	appendTok()
+	return tokens
 }
 
-/*
-This function parses the given line into an Instruction object.
-
-returns _, true: if given line is not a valid instruction line
-*/
-func parseInstructionLine(line string) (Instruction, bool) {
-	// Remove parantheses
-	line = strings.ReplaceAll(line, "(", " ")
-	line = strings.ReplaceAll(line, ")", " ")
-	line = strings.ReplaceAll(line, ",", " ")
-
-	var inst Instruction
-	tokens := strings.Fields(line)
-	n_tokens := len(tokens)
-
-	// Blank line
-	if n_tokens == 0 {
-		return inst, true
+func fillInstToken(inst *Instruction, tok Token) {
+	switch tok.Pos {
+	case 0:
+		inst.Op = stringToOpcode(tok.Val)
+	case 1:
+		inst.Rd = parseRegisterValue(tok.Val)
+	case 2:
+		inst.Rs1 = parseRegisterValue(tok.Val)
+	case 3:
+		inst.Rs2 = parseRegisterValue(tok.Val)
+	default:
+		fmt.Fprint(os.Stderr, "Invalid token\n")
 	}
 
-	opcode := tokens[0]
-	inst.Op = stringToOpcode(opcode)
-	// Only opcode
-	if n_tokens == 1 {
-		return inst, false
-	}
-
-	// read rd
-	rd := tokens[1]
-	inst.Rd = parseRegisterValue(rd)
-
-	// Only opcode + rd
-	if n_tokens == 2 {
-		return inst, false
-	}
-
-	// read rs1
-	rs1 := tokens[2]
-	inst.Rs1 = parseRegisterValue(rs1)
-
-	// Only opcode + rd + rs1
-	if n_tokens == 3 {
-		return inst, false
-	}
-
-	// read rs1
-	rs2 := tokens[3]
-	inst.Rs2 = parseRegisterValue(rs2)
-
-	return inst, false
 }
 
-/*
-This function tries to parse given file into an array of instructions
-
-Returns 'nil' on failure.
-*/
 func ParseProgramFromFile(filename string) []Instruction {
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0)
 	if err != nil {
@@ -268,6 +359,8 @@ func ParseProgramFromFile(filename string) []Instruction {
 		return nil
 	}
 	defer file.Close()
+
+	program := make([]Instruction, 0)
 
 	scanner := bufio.NewScanner(file)
 
@@ -278,76 +371,60 @@ func ParseProgramFromFile(filename string) []Instruction {
 			continue
 		}
 
-		if !doesLineDeclareLabel(line) {
-			line_num++
+		tokens := tokenizeLine(line)
+		if len(tokens) >= 2 && tokens[1].Val == ":" {
+			// This is a label
+			symbol_table[tokens[0].Val] = line_num
+			tokens = tokens[2:]
+		}
+
+		if len(tokens) <= 0 {
 			continue
 		}
 
-		// Fill the symbol_table
-		{
-			tokens := strings.Split(line, ":")
-
-			label := strings.TrimSpace(tokens[0])
-			symbol_table[label] = line_num
-
-			if strings.TrimSpace(tokens[1]) != "" {
-				line_num++
-			}
+		var inst Instruction
+		for _, tok := range tokens {
+			fillInstToken(&inst, tok)
 		}
+
+		// First expand the pseudo instruction, then determine the format
+		if _Inst_Pseudo_start < inst.Op && inst.Op < _Inst_Pseudo_end {
+			inst = expandPseudoInstruction(inst)
+		}
+
+		inst._fmt = getInstructionFmt(inst)
+
+		program = append(program, inst)
+		line_num++
 	}
 
-	// Reset the scanner, and line_num
-	line_num = 0
-	scanner = bufio.NewScanner(file)
-	file.Seek(0, 0)
+	// If any unresolved label addr, resolve them
+	for i, l := range insts_missing_label {
+		inst := &program[i]
 
-	program := make([]Instruction, 0)
-	// Parse the instructions line by line, expand pseudo instructions etc...
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Check if the line has a label declaration
-		// If line also contains an instruction, remove the label from line
-		// If line does not contains instruction, skip the line
-		if doesLineDeclareLabel(line) {
-			tokens := strings.Split(line, ":")
-
-			if strings.TrimSpace(tokens[1]) != "" {
-				line = tokens[1]
-			} else {
-				continue
-			}
-
+		target, ok := symbol_table[l]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Undeclared label: '%s'\n", l)
+			os.Exit(1)
 		}
 
-		inst, pass := parseInstructionLine(line)
-		if pass {
-			continue
-		}
+		offset := target - i
 
-		if inst.Op == _Inst_Unknown {
-			return nil
+		// based on different control instructions, the offset is stored in different place
+		switch inst._fmt {
+		case Fmt_B:
+			inst.Rs2 = int32(offset)
+		case Fmt_J:
+			inst.Rs1 = int32(offset)
+		default:
+			fmt.Fprintf(os.Stderr, "Illegal label use or unknown key: '%s'\n", l)
+			os.Exit(1)
 		}
-
-		if _Inst_Pseudo_start < inst.Op && inst.Op < _Inst_Pseudo_end {
-			expanded_inst := expandPseudoInstruction(inst)
-			program = append(program, expanded_inst...)
-			line_num += len(expanded_inst)
-		} else {
-			program = append(program, inst)
-			line_num++
-		}
-
 	}
 
 	if err = scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "ERR - Failed to read file(%s): %s\n", filename, err.Error())
 		return nil
-	}
-
-	// TODO: Move the assertion into a seperate assert(x bool) function??
-	if len(program) != line_num {
-		panic("Assert: len(program) != line_num")
 	}
 
 	return program

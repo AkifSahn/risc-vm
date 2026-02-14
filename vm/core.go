@@ -5,83 +5,9 @@ import (
 	"log"
 )
 
-type Inst_Op int
-type Inst_Type int
-
 const (
 	STALL_RAW uint8 = 1 << iota
 	STALL_BRANCH
-)
-
-const (
-	R Inst_Type = iota
-	I           // immediate
-	S           // store
-	B           // branch
-	U           // Upper immediate
-	J
-)
-
-const (
-	Inst_Nop Inst_Op = iota
-
-	_Inst_R_start
-	Inst_Add
-	Inst_Sub
-	Inst_Mul
-	Inst_Div
-	Inst_Rem
-	Inst_Xor
-	Inst_Or
-	Inst_And
-	_Inst_R_end
-
-	_Inst_I_start
-	Inst_Addi
-	Inst_Subi
-	Inst_Xori
-	Inst_Ori
-	Inst_Andi
-	Inst_Jalr // Jump And Link Reg
-	Inst_Load
-	Inst_Slli
-	_Inst_I_end
-
-	_Inst_S_start
-	Inst_Store // store-word
-	_Inst_S_end
-
-	_Inst_B_start
-	Inst_Beq
-	Inst_Bne
-	Inst_Blt
-	Inst_Bge
-	_Inst_B_end
-
-	_Inst_J_start
-	Inst_Jal // Jump And Link
-	_Inst_J_end
-
-	_Inst_U_start
-	Inst_Lui
-	Inst_Auipc
-	_Inst_U_end
-
-	_Inst_Pseudo_start
-	Inst_Mv
-	Inst_Not
-	Inst_Neg
-	Inst_Li
-	Inst_Jr
-	Inst_Ret
-	Inst_Ble
-	Inst_Bgt
-	Inst_J
-	Inst_Call
-	_Inst_Pseudo_end
-
-	Inst_End
-	_Inst_Unknown
 )
 
 type Instruction struct {
@@ -94,7 +20,7 @@ type Instruction struct {
 	_s2           int32
 	_imm          int32
 	_result       int32
-	_type         Inst_Type
+	_fmt          Inst_Fmt
 	_ex_remaining int // Number of executions remaining
 }
 
@@ -211,7 +137,7 @@ func (v *Vm) SetProgram(program []Instruction) {
 }
 
 func (v *Vm) isControlInstruction(inst Instruction) bool {
-	if inst._type == B || inst._type == J || inst.Op == Inst_Jalr {
+	if inst._fmt == Fmt_B || inst._fmt == Fmt_J || inst.Op == Inst_Jalr {
 		return true
 	}
 
@@ -227,13 +153,13 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 		return true
 	}
 
-	switch inst._type {
-	case R:
+	switch inst._fmt {
+	case Fmt_R:
 		if v.registers[inst.Rs1].Busy || v.registers[inst.Rs2].Busy {
 			return true
 		}
 
-	case I:
+	case Fmt_I:
 		if inst.Op == Inst_Load {
 			if v.registers[inst.Rs2].Busy {
 				return true
@@ -242,23 +168,23 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 			return true
 		}
 
-	case S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
+	case Fmt_S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
 		if v.registers[inst.Rd].Busy || v.registers[inst.Rs2].Busy {
 			return true
 		}
 
-	case B:
+	case Fmt_B:
 		if v.registers[inst.Rd].Busy || v.registers[inst.Rs1].Busy {
 			return true
 		}
 
-	case U:
+	case Fmt_U:
 		return false
 
-	case J:
+	case Fmt_J:
 		return false
 	default:
-		panic(fmt.Sprintf("unexpected Inst_Type: %#v", inst._type))
+		panic(fmt.Sprintf("unexpected Inst_Type: %#v", inst._fmt))
 	}
 
 	return false
@@ -266,21 +192,6 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 func (v *Vm) run_fetch() {
 	inst := v.program[v.pc]
-
-	// Determine the instruction type
-	if _Inst_R_start < inst.Op && inst.Op < _Inst_R_end {
-		inst._type = R
-	} else if _Inst_I_start < inst.Op && inst.Op < _Inst_I_end {
-		inst._type = I
-	} else if _Inst_S_start < inst.Op && inst.Op < _Inst_S_end {
-		inst._type = S
-	} else if _Inst_B_start < inst.Op && inst.Op < _Inst_B_end {
-		inst._type = B
-	} else if _Inst_U_start < inst.Op && inst.Op < _Inst_U_end {
-		inst._type = U
-	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
-		inst._type = J
-	}
 
 	{
 		n, ok := v._instCycleTable[inst.Op]
@@ -319,14 +230,14 @@ func (v *Vm) run_decode() {
 		v._stall_map |= STALL_BRANCH
 	}
 
-	switch inst._type {
-	case R:
+	switch inst._fmt {
+	case Fmt_R:
 		inst._s1 = v.registers[inst.Rs1].Data
 		inst._s2 = v.registers[inst.Rs2].Data
 
 		// Set the destination register as busy
 		v.registers[inst.Rd].Busy = true
-	case I:
+	case Fmt_I:
 		// In load, immediate is placed in a different position so we check it explicitly.
 		if inst.Op == Inst_Load {
 			inst._imm = inst.Rs1
@@ -338,18 +249,18 @@ func (v *Vm) run_decode() {
 
 		// Set the destination register as busy
 		v.registers[inst.Rd].Busy = true
-	case S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
+	case Fmt_S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._imm = inst.Rs1
 		inst._s2 = v.registers[inst.Rs2].Data
-	case B:
+	case Fmt_B:
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._s2 = v.registers[inst.Rs1].Data
 		inst._imm = inst.Rs2
-	case U:
+	case Fmt_U:
 		inst._imm = inst.Rs1
 		v.registers[inst.Rd].Busy = true
-	case J:
+	case Fmt_J:
 		inst._imm = inst.Rs1
 		v.registers[inst.Rd].Busy = true
 	}
@@ -472,7 +383,7 @@ func (v *Vm) run_memory() {
 	inst := v._xm_buff[1].inst
 	pc := v._xm_buff[1].pc
 
-	if inst._type == B {
+	if inst._fmt == Fmt_B {
 		return
 	}
 
@@ -511,7 +422,7 @@ func (v *Vm) run_writeback() {
 	}
 
 	// We don't want to writeback if instruction type is S
-	if inst._type == R || inst._type == I || inst._type == U || inst._type == J {
+	if inst._fmt == Fmt_R || inst._fmt == Fmt_I || inst._fmt == Fmt_U || inst._fmt == Fmt_J {
 		// set the destination register as free
 		v.registers[inst.Rd].Busy = false
 
