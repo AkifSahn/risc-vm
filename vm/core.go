@@ -121,12 +121,12 @@ func CreateVm(mem_size, stack_size int) *Vm {
 
 func (v *Vm) LoadProgramFromFile(fileName string) {
 	// Parse the file etc...
-	program := ParseProgramFromFile(fileName)
-	v.SetProgram(program)
+	program, pc := ParseProgramFromFile(fileName)
+	v.SetProgram(program, pc)
 }
 
-func (v *Vm) SetProgram(program []Instruction) {
-	v.pc = 0
+func (v *Vm) SetProgram(program []Instruction, pc int) {
+	v.pc = int32(pc)
 	v.program = program
 
 	// Reset the Diagnostics_Manager

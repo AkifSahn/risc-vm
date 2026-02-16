@@ -352,15 +352,18 @@ func fillInstToken(inst *Instruction, tok Token) {
 
 }
 
-func ParseProgramFromFile(filename string) []Instruction {
+func ParseProgramFromFile(filename string) ([]Instruction, int) {
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0)
 	if err != nil {
 		log.Printf("ERR - Failed to open file(%s): %s\n", filename, err.Error())
-		return nil
+		return nil, -1
 	}
 	defer file.Close()
 
 	program := make([]Instruction, 0)
+
+	program = append(program, newInstruction(Inst_End, 0, 0, 0))
+	line_num = 1
 
 	scanner := bufio.NewScanner(file)
 
@@ -424,8 +427,12 @@ func ParseProgramFromFile(filename string) []Instruction {
 
 	if err = scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "ERR - Failed to read file(%s): %s\n", filename, err.Error())
-		return nil
+		return nil, -1
 	}
 
-	return program
+	pc, ok := symbol_table["main"]
+	if !ok{
+		pc = 1
+	}
+	return program, pc
 }
