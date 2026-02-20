@@ -33,6 +33,111 @@ func newInstruction(Op Inst_Op, Rd int32, Rs1 int32, Rs2 int32) Instruction {
 	}
 }
 
+func getSourceRegisters(inst Instruction) (int32, int32) {
+	switch inst._fmt {
+	case Fmt_R:
+		return inst.Rs1, inst.Rs2
+
+	case Fmt_I:
+		if inst.Op == Inst_Load {
+			return inst.Rs2, -1
+		} else {
+			return inst.Rs1, -1
+		}
+
+	case Fmt_S:
+		return inst.Rd, inst.Rs2
+
+	case Fmt_B:
+		return inst.Rd, inst.Rs1
+
+	case Fmt_U, Fmt_J:
+		return -1, -1
+
+	default:
+		panic(fmt.Sprintf("unexpected vm.Inst_Fmt: %#v", inst._fmt))
+	}
+}
+
+func getAluInputRegisters(inst Instruction) (int32, int32) {
+	switch inst._fmt {
+	case Fmt_R:
+		return inst.Rs1, inst.Rs2
+
+	case Fmt_I:
+		if inst.Op == Inst_Load {
+			return inst.Rs2, -1
+		} else {
+			return inst.Rs1, -1
+		}
+
+	case Fmt_S:
+		return inst.Rs2, -1
+
+	case Fmt_B:
+		return inst.Rd, inst.Rs1
+
+	case Fmt_U, Fmt_J:
+		return -1, -1
+
+	default:
+		panic(fmt.Sprintf("unexpected vm.Inst_Fmt: %#v", inst._fmt))
+	}
+}
+
+// This check should only be done in the decode stage!!
+func canForwardRegister(vm *Vm, reg int32) bool {
+	if reg <= 0 {
+		return true
+	}
+
+	half_inst := vm._dx_buff[1].inst
+	full_inst := vm._xm_buff[1].inst // Enabled if and only if can't forward from inst_s1
+
+	// Check if bypass source instructions actually write to a register
+	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
+		// Compare the destination register with given source register
+		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
+			return true
+		}
+	}
+
+	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
+		// Compare the destination register with
+		if half_inst.Op != Inst_Load && full_inst.Rd == reg {
+			return true
+		}
+	}
+
+	return false
+}
+
+func getRegValueFromBypass(vm *Vm, reg int32) int32 {
+	if reg <= 0 {
+		return -1
+	}
+
+	half_inst := vm._xm_buff[1].inst
+	full_inst := vm._mw_buff[1].inst // Enabled if and only if can't forward from inst_s1
+
+	// Check if bypass source instructions actually write to a register
+	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
+		// Compare the destination register with given source register
+		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
+			return half_inst._result
+		}
+	}
+
+	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
+		// Compare the destination register with
+		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
+			return full_inst._result
+		}
+	}
+
+	return vm.registers[reg].Data
+}
+
 type Register struct {
 	Data int32
 	Busy bool
@@ -153,38 +258,23 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 		return true
 	}
 
-	switch inst._fmt {
-	case Fmt_R:
-		if v.registers[inst.Rs1].Busy || v.registers[inst.Rs2].Busy {
-			return true
-		}
-
-	case Fmt_I:
-		if inst.Op == Inst_Load {
-			if v.registers[inst.Rs2].Busy {
+	rs1, rs2 := getSourceRegisters(inst)
+	if rs1 > 0 {
+		if v.registers[rs1].Busy {
+			// FIX: Checking the inst.Op == Inst_Store is not a good approach
+			// We need this check because the first source is not an ALU input and can't be forwarded
+			if inst.Op == Inst_Store || !canForwardRegister(v, rs1) {
 				return true
 			}
-		} else if v.registers[inst.Rs1].Busy {
-			return true
 		}
+	}
 
-	case Fmt_S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
-		if v.registers[inst.Rd].Busy || v.registers[inst.Rs2].Busy {
-			return true
+	if rs2 > 0 {
+		if v.registers[rs2].Busy {
+			if !canForwardRegister(v, rs2) {
+				return true
+			}
 		}
-
-	case Fmt_B:
-		if v.registers[inst.Rd].Busy || v.registers[inst.Rs1].Busy {
-			return true
-		}
-
-	case Fmt_U:
-		return false
-
-	case Fmt_J:
-		return false
-	default:
-		panic(fmt.Sprintf("unexpected Inst_Type: %#v", inst._fmt))
 	}
 
 	return false
@@ -212,17 +302,19 @@ func (v *Vm) run_decode() {
 	inst := v._fd_buff[1].inst
 	pc := v._fd_buff[1].pc
 
-	// Do not issue this instruction!
 	if v.shouldStallDecode(inst) {
 		v._stall_map |= STALL_RAW
 
 		// Feed the IF/ID buffer to itself to avoid draining it
 		v._fd_buff[0] = v._fd_buff[1]
 		v._fd_buff[0].valid = true
+		// fmt.Printf("\n\ncycle %d: STALL BEGIN\n", v.Dm.n_cycle)
+		// fmt.Printf("Inst: %#v\n", inst)
 
 		return
 	} else if v._stall_map&STALL_RAW != 0 {
 		v._stall_map &= ^STALL_RAW
+		// fmt.Printf("cycle %d: STALL END\n", v.Dm.n_cycle)
 	}
 
 	// If this is a branch instruction, stall the fetch until the branch addr is calculated
@@ -285,37 +377,54 @@ func (v *Vm) run_execute() {
 		return
 	}
 
+	var s1, s2 int32
+
+	// Get the source values either from bypass or use the one loaded from RF
+	{
+		rs1, rs2 := getAluInputRegisters(inst)
+		s1 = getRegValueFromBypass(v, rs1)
+		s2 = getRegValueFromBypass(v, rs2)
+
+		if s1 == -1 {
+			s1 = inst._s1
+		}
+
+		if s2 == -1 {
+			s2 = inst._s2
+		}
+	}
+
 	switch inst.Op {
 	case Inst_Add:
-		inst._result = inst._s1 + inst._s2
+		inst._result = s1 + s2
 	case Inst_Sub:
-		inst._result = inst._s1 - inst._s2
+		inst._result = s1 - s2
 	case Inst_Mul:
-		inst._result = inst._s1 * inst._s2
+		inst._result = s1 * s2
 	case Inst_Div:
-		inst._result = inst._s1 / inst._s2
+		inst._result = s1 / s2
 	case Inst_Rem:
-		inst._result = inst._s1 % inst._s2
+		inst._result = s1 % s2
 	case Inst_Xor:
-		inst._result = inst._s1 ^ inst._s2
+		inst._result = s1 ^ s2
 	case Inst_Or:
-		inst._result = inst._s1 | inst._s2
+		inst._result = s1 | s2
 	case Inst_And:
-		inst._result = inst._s1 & inst._s2
+		inst._result = s1 & s2
 
 	case Inst_Addi:
-		inst._result = inst._s1 + inst._imm
+		inst._result = s1 + inst._imm
 	case Inst_Subi:
-		inst._result = inst._s1 - inst._imm
+		inst._result = s1 - inst._imm
 	case Inst_Xori:
-		inst._result = inst._s1 ^ inst._imm
+		inst._result = s1 ^ inst._imm
 	case Inst_Ori:
-		inst._result = inst._s1 | inst._imm
+		inst._result = s1 | inst._imm
 	case Inst_Andi:
-		inst._result = inst._s1 & inst._imm
+		inst._result = s1 & inst._imm
 
 	case Inst_Load: // load word
-		addr := inst._s1 + inst._imm
+		addr := s1 + inst._imm
 		if addr%(WORD_SIZE) != 0 {
 			log.Printf("ERROR - Illegal read attempt from unaligned memory address: '%d'."+
 				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
@@ -325,13 +434,13 @@ func (v *Vm) run_execute() {
 
 	case Inst_Jalr:
 		inst._result = pc
-		v.pc = inst._s1 + inst._imm
+		v.pc = s1 + inst._imm
 
 	case Inst_Slli: // rd = rs1 << imm[0:4]
-		inst._result = inst._s1 << inst._imm
+		inst._result = s1 << inst._imm
 
 	case Inst_Store: // Store word
-		addr := inst._s2 + inst._imm // In bytes
+		addr := s1 + inst._imm // In bytes
 
 		// Calculated addr is in bytes and WORD_SIZE is in bytes. So convert WORD_SIZE to bits
 		if addr%(WORD_SIZE) != 0 {
@@ -343,19 +452,19 @@ func (v *Vm) run_execute() {
 		inst._result = addr // Each memory cell holds one byte
 
 	case Inst_Beq:
-		if inst._s1 == inst._s2 {
+		if s1 == s2 {
 			v.pc += inst._imm - 1 // v.pc holds the next instruction hence -1
 		}
 	case Inst_Bne:
-		if inst._s1 != inst._s2 {
+		if s1 != s2 {
 			v.pc += inst._imm - 1
 		}
 	case Inst_Blt:
-		if inst._s1 < inst._s2 {
+		if s1 < s2 {
 			v.pc += inst._imm - 1
 		}
 	case Inst_Bge:
-		if inst._s1 >= inst._s2 {
+		if s1 >= s2 {
 			v.pc += inst._imm - 1
 		}
 
