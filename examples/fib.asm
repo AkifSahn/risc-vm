@@ -1,7 +1,7 @@
 main:
-    li      a0,30
+    li      a0,10 ; Input parameter
     jal     ra,fib
-    sw      a0,0(zero)
+    sw      a0,-4(sp)
     end
 
 fib:

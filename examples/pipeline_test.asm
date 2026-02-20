@@ -1,6 +1,4 @@
-    li      a0, 1
-    li      a5,1
-    beq     a0,a5,.L1 ; This is a comment
-    li      a0,-50
-    .L1:
+    li a0 10      ; a0 = 10
+    addi a1 a0 10 ; a1 = 20
+    subi a2 a1 40 ; a2 = -20
     end

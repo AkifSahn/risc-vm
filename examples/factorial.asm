@@ -1,7 +1,7 @@
 main:
-    li      a0,5
+    li      a0,5 ; Input parameter
     jal     ra factorial
-    sw      a0 0(zero)
+    sw      a0 -4(sp) ; Store the result at the top of the stack
     end
 
 factorial:
