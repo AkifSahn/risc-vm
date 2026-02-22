@@ -336,7 +336,8 @@ func tokenizeLine(line string) []Token {
 	return tokens
 }
 
-func fillInstToken(inst *Instruction, tok Token) {
+// returns error if an invalid token is passed
+func fillInstToken(inst *Instruction, tok Token) error {
 	switch tok.Pos {
 	case 0:
 		inst.Op = stringToOpcode(tok.Val)
@@ -347,16 +348,17 @@ func fillInstToken(inst *Instruction, tok Token) {
 	case 3:
 		inst.Rs2 = parseRegisterValue(tok.Val)
 	default:
-		fmt.Fprint(os.Stderr, "Invalid token\n")
+		return fmt.Errorf("Invalid token: %#v\n", tok)
 	}
 
+	return nil
 }
 
-func ParseProgramFromFile(filename string) ([]Instruction, int) {
+// Returns list of instructions parsed, the default pc and an error.
+func ParseProgramFromFile(filename string) ([]Instruction, int, error) {
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0)
 	if err != nil {
-		log.Printf("ERR - Failed to open file(%s): %s\n", filename, err.Error())
-		return nil, -1
+		return nil, -1, err
 	}
 	defer file.Close()
 
@@ -387,7 +389,10 @@ func ParseProgramFromFile(filename string) ([]Instruction, int) {
 
 		var inst Instruction
 		for _, tok := range tokens {
-			fillInstToken(&inst, tok)
+			err := fillInstToken(&inst, tok)
+			if err != nil {
+				return nil, -1, err
+			}
 		}
 
 		// First expand the pseudo instruction, then determine the format
@@ -407,8 +412,7 @@ func ParseProgramFromFile(filename string) ([]Instruction, int) {
 
 		target, ok := symbol_table[l]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "Undeclared label: '%s'\n", l)
-			os.Exit(1)
+			return nil, -1, fmt.Errorf("Undeclared label or illegal label use: '%s'\n", l)
 		}
 
 		offset := target - i
@@ -420,19 +424,18 @@ func ParseProgramFromFile(filename string) ([]Instruction, int) {
 		case Fmt_J:
 			inst.Rs1 = int32(offset)
 		default:
-			fmt.Fprintf(os.Stderr, "Illegal label use or unknown key: '%s'\n", l)
-			os.Exit(1)
+			return nil, -1, fmt.Errorf("Illegal label use or unknown key: '%s'\n", l)
 		}
 	}
 
 	if err = scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERR - Failed to read file(%s): %s\n", filename, err.Error())
-		return nil, -1
+		return nil, -1, err
 	}
 
+	// If there is no 'main' lable start from the first instruction
 	pc, ok := symbol_table["main"]
-	if !ok{
+	if !ok {
 		pc = 1
 	}
-	return program, pc
+	return program, pc, nil
 }

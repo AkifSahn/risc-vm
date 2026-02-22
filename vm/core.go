@@ -55,7 +55,8 @@ func getSourceRegisters(inst Instruction) (int32, int32) {
 		return -1, -1
 
 	default:
-		panic(fmt.Sprintf("unexpected vm.Inst_Fmt: %#v", inst._fmt))
+		log.Fatalf("Unexpected vm.Inst_Fmt: %#v", inst._fmt)
+		return -1, -1 // won't compile without return value
 	}
 }
 
@@ -81,7 +82,8 @@ func getAluInputRegisters(inst Instruction) (int32, int32) {
 		return -1, -1
 
 	default:
-		panic(fmt.Sprintf("unexpected vm.Inst_Fmt: %#v", inst._fmt))
+		log.Fatalf("Unexpected vm.Inst_Fmt: %#v", inst._fmt)
+		return -1, -1
 	}
 }
 
@@ -176,28 +178,24 @@ type Vm struct {
 	Dm Diagnostics_Manager
 }
 
-func CreateVm(mem_size, stack_size int) *Vm {
+func CreateVm(mem_size, stack_size int) (*Vm, error) {
 	if mem_size <= 0 || stack_size <= 0 {
-		fmt.Println("Memory/stack size must be non-zero!")
-		return nil
+		return nil, fmt.Errorf("Memory/stack size must be non-zero!")
 	}
 
 	if mem_size%WORD_SIZE != 0 {
-		fmt.Printf("Invalid memory size '%d', Memory size must be a multiple of word size(%d).\n",
+		return nil, fmt.Errorf("Invalid memory size '%d', Memory size must be a multiple of word size(%d).\n",
 			mem_size, WORD_SIZE)
-		return nil
 	}
 
 	if stack_size%WORD_SIZE != 0 {
-		fmt.Printf("Invalid stack size '%d', Stack size must be a multiple of word size(%d).\n",
+		return nil, fmt.Errorf("Invalid stack size '%d', Stack size must be a multiple of word size(%d).\n",
 			mem_size, WORD_SIZE)
-		return nil
 	}
 
 	if stack_size > mem_size {
-		fmt.Printf("Stack(%d) size can not be bigger than memory size(%d).\n",
+		return nil, fmt.Errorf("Stack(%d) size can not be bigger than memory size(%d).\n",
 			stack_size, mem_size)
-		return nil
 	}
 
 	vm := Vm{
@@ -221,13 +219,16 @@ func CreateVm(mem_size, stack_size int) *Vm {
 		}
 	}
 
-	return &vm
+	return &vm, nil
 }
 
-func (v *Vm) LoadProgramFromFile(fileName string) {
+// Returns an error if a parsing error occurs
+func (v *Vm) LoadProgramFromFile(fileName string) error{
 	// Parse the file etc...
-	program, pc := ParseProgramFromFile(fileName)
+	program, pc, err := ParseProgramFromFile(fileName)
 	v.SetProgram(program, pc)
+
+	return err
 }
 
 func (v *Vm) SetProgram(program []Instruction, pc int) {
@@ -426,7 +427,7 @@ func (v *Vm) run_execute() {
 	case Inst_Load: // load word
 		addr := s1 + inst._imm
 		if addr%(WORD_SIZE) != 0 {
-			log.Printf("ERROR - Illegal read attempt from unaligned memory address: '%d'."+
+			log.Printf("Illegal read attempt from unaligned memory address: '%d'."+
 				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
 			v._halt = true
 		}
