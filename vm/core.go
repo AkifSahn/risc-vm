@@ -33,6 +33,7 @@ func newInstruction(Op Inst_Op, Rd int32, Rs1 int32, Rs2 int32) Instruction {
 	}
 }
 
+// @Redundant: mostly same as getAluInputRegisters, find a way to remove one of the one of the functions
 func getSourceRegisters(inst Instruction) (int32, int32) {
 	switch inst._fmt {
 	case Fmt_R:
@@ -56,7 +57,7 @@ func getSourceRegisters(inst Instruction) (int32, int32) {
 
 	default:
 		log.Fatalf("Unexpected vm.Inst_Fmt: %#v", inst._fmt)
-		return -1, -1 // won't compile without return value
+		return -1, -1
 	}
 }
 
@@ -87,8 +88,8 @@ func getAluInputRegisters(inst Instruction) (int32, int32) {
 	}
 }
 
-// This check should only be done in the decode stage!!
-func canForwardRegister(vm *Vm, reg int32) bool {
+// This function checks if a register at decode stage can be forwarded later on.
+func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
 	if reg <= 0 {
 		return true
 	}
@@ -114,30 +115,32 @@ func canForwardRegister(vm *Vm, reg int32) bool {
 	return false
 }
 
-func getRegValueFromBypass(vm *Vm, reg int32) int32 {
+// Gets the given register value from bypass.
+// If register number don't match, returns (-1, false).
+func getRegValueFromBypass(vm *Vm, reg int32) (int32, bool) {
 	if reg <= 0 {
-		return -1
+		return -1, false
 	}
 
 	half_inst := vm._xm_buff[1].inst
-	full_inst := vm._mw_buff[1].inst // Enabled if and only if can't forward from inst_s1
+	full_inst := vm._mw_buff[1].inst // Enabled only if we can't forward from inst_s1
 
 	// Check if bypass source instructions actually write to a register
 	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
 		// Compare the destination register with given source register
 		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
-			return half_inst._result
+			return half_inst._result, true
 		}
 	}
 
 	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
 		// Compare the destination register with
 		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
-			return full_inst._result
+			return full_inst._result, true
 		}
 	}
 
-	return vm.registers[reg].Data
+	return -1, false
 }
 
 type Register struct {
@@ -169,9 +172,10 @@ type Vm struct {
 
 	_halt bool
 
+	// Holds the instruction execute cycle numbers.
 	_instCycleTable map[Inst_Op]int
 
-	// A bitmap for different stalls.
+	// Bitflag for different stalls.
 	// Each stall is same in principle, but their cause may be different.
 	_stall_map byte
 
@@ -223,7 +227,7 @@ func CreateVm(mem_size, stack_size int) (*Vm, error) {
 }
 
 // Returns an error if a parsing error occurs
-func (v *Vm) LoadProgramFromFile(fileName string) error{
+func (v *Vm) LoadProgramFromFile(fileName string) error {
 	// Parse the file etc...
 	program, pc, err := ParseProgramFromFile(fileName)
 	v.SetProgram(program, pc)
@@ -264,7 +268,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 		if v.registers[rs1].Busy {
 			// FIX: Checking the inst.Op == Inst_Store is not a good approach
 			// We need this check because the first source is not an ALU input and can't be forwarded
-			if inst.Op == Inst_Store || !canForwardRegister(v, rs1) {
+			if inst.Op == Inst_Store || !checkRegisterForwardDecode(v, rs1) {
 				return true
 			}
 		}
@@ -272,7 +276,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 	if rs2 > 0 {
 		if v.registers[rs2].Busy {
-			if !canForwardRegister(v, rs2) {
+			if !checkRegisterForwardDecode(v, rs2) {
 				return true
 			}
 		}
@@ -382,15 +386,16 @@ func (v *Vm) run_execute() {
 
 	// Get the source values either from bypass or use the one loaded from RF
 	{
+		var ok bool
 		rs1, rs2 := getAluInputRegisters(inst)
-		s1 = getRegValueFromBypass(v, rs1)
-		s2 = getRegValueFromBypass(v, rs2)
 
-		if s1 == -1 {
+		s1, ok = getRegValueFromBypass(v, rs1)
+		if !ok {
 			s1 = inst._s1
 		}
 
-		if s2 == -1 {
+		s2, ok = getRegValueFromBypass(v, rs2)
+		if !ok {
 			s2 = inst._s2
 		}
 	}
