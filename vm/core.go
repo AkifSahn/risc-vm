@@ -74,7 +74,7 @@ func getAluInputRegisters(inst Instruction) (int32, int32) {
 		}
 
 	case Fmt_S:
-		return inst.Rs2, -1
+		return -1, inst.Rs2
 
 	case Fmt_B:
 		return inst.Rd, inst.Rs1
@@ -446,7 +446,7 @@ func (v *Vm) run_execute() {
 		inst._result = s1 << inst._imm
 
 	case Inst_Store: // Store word
-		addr := s1 + inst._imm // In bytes
+		addr := s2 + inst._imm // In bytes
 
 		// Calculated addr is in bytes and WORD_SIZE is in bytes. So convert WORD_SIZE to bits
 		if addr%(WORD_SIZE) != 0 {
