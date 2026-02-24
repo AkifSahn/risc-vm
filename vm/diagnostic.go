@@ -13,11 +13,27 @@ const (
 	DUMP_DEC
 )
 
+type bypass_type uint8
+
+const (
+	BYPASS_XM bypass_type = iota + 1 // Bypass from IX/MEM pipeline buffer
+	BYPASS_MW                        // Bypass from MEM/WB pipeline buffer
+)
+
+type Cycle_Info struct {
+	Stage_pcs        [5]uint32
+	Stalled          bool
+	S1_bypass_status bypass_type
+	S2_bypass_status bypass_type
+}
+
 type Diagnostics_Manager struct {
 	program_size    uint
 	n_executed_inst uint
 	n_cycle         uint
 	n_stalls        uint
+
+	Cycle_infos []Cycle_Info
 }
 
 func CreateDiagnosticsManager() Diagnostics_Manager {

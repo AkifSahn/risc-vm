@@ -117,9 +117,9 @@ func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
 
 // Gets the given register value from bypass.
 // If register number don't match, returns (-1, false).
-func getRegValueFromBypass(vm *Vm, reg int32) (int32, bool) {
+func getRegValueFromBypass(vm *Vm, reg int32) (int32, bypass_type, bool) {
 	if reg <= 0 {
-		return -1, false
+		return -1, 0, false
 	}
 
 	half_inst := vm._xm_buff[1].inst
@@ -129,18 +129,18 @@ func getRegValueFromBypass(vm *Vm, reg int32) (int32, bool) {
 	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
 		// Compare the destination register with given source register
 		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
-			return half_inst._result, true
+			return half_inst._result, BYPASS_XM, true
 		}
 	}
 
 	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
 		// Compare the destination register with
 		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
-			return full_inst._result, true
+			return full_inst._result, BYPASS_MW, true
 		}
 	}
 
-	return -1, false
+	return -1, 0, false
 }
 
 type Register struct {
@@ -179,7 +179,8 @@ type Vm struct {
 	// Each stall is same in principle, but their cause may be different.
 	_stall_map byte
 
-	Dm Diagnostics_Manager
+	Dm         Diagnostics_Manager
+	cycle_info Cycle_Info
 }
 
 func CreateVm(mem_size, stack_size int) (*Vm, error) {
@@ -296,6 +297,11 @@ func (v *Vm) run_fetch() {
 		inst._ex_remaining = n
 	}
 
+	// Update the cyle info
+	{
+		v.cycle_info.Stage_pcs[0] = uint32(v.pc)
+	}
+
 	v.pc++
 
 	v._fd_buff[0].inst = inst
@@ -326,6 +332,9 @@ func (v *Vm) run_decode() {
 	if v.isControlInstruction(inst) {
 		v._stall_map |= STALL_BRANCH
 	}
+
+	// Update the cyle info
+	v.cycle_info.Stage_pcs[1] = uint32(pc) - 1
 
 	switch inst._fmt {
 	case Fmt_R:
@@ -371,6 +380,9 @@ func (v *Vm) run_execute() {
 	inst := v._dx_buff[1].inst
 	pc := v._dx_buff[1].pc
 
+	// Update the cyle info
+	v.cycle_info.Stage_pcs[2] = uint32(pc) - 1
+
 	inst._ex_remaining--
 
 	// Handle multi cycle instructions
@@ -387,17 +399,25 @@ func (v *Vm) run_execute() {
 	// Get the source values either from bypass or use the one loaded from RF
 	{
 		var ok bool
+		var t bypass_type
+
 		rs1, rs2 := getAluInputRegisters(inst)
 
-		s1, ok = getRegValueFromBypass(v, rs1)
+		s1, t, ok = getRegValueFromBypass(v, rs1)
 		if !ok {
 			s1 = inst._s1
 		}
 
-		s2, ok = getRegValueFromBypass(v, rs2)
+		// Update cycle info
+		v.cycle_info.S1_bypass_status = t
+
+		s2, t, ok = getRegValueFromBypass(v, rs2)
 		if !ok {
 			s2 = inst._s2
 		}
+
+		// Update cycle info
+		v.cycle_info.S2_bypass_status = t
 	}
 
 	switch inst.Op {
@@ -498,6 +518,9 @@ func (v *Vm) run_memory() {
 	inst := v._xm_buff[1].inst
 	pc := v._xm_buff[1].pc
 
+	// Update the cycle info
+	v.cycle_info.Stage_pcs[3] = uint32(pc) - 1
+
 	if inst._fmt == Fmt_B {
 		return
 	}
@@ -522,7 +545,6 @@ func (v *Vm) run_memory() {
 		inst._result = int32(u)
 	}
 
-	// TODO: should we handle B-type differently??
 	v._mw_buff[0].inst = inst
 	v._mw_buff[0].pc = pc
 	v._mw_buff[0].valid = true
@@ -530,6 +552,10 @@ func (v *Vm) run_memory() {
 
 func (v *Vm) run_writeback() {
 	inst := v._mw_buff[1].inst
+	pc := v._mw_buff[1].pc
+
+	// Update the cycle info
+	v.cycle_info.Stage_pcs[4] = uint32(pc) - 1
 
 	if inst.Op == Inst_End {
 		v._halt = true
@@ -551,18 +577,19 @@ func (v *Vm) run_writeback() {
 
 }
 
-func (v *Vm) RunSequential() {
-	for !v._halt {
-		v.run_fetch()
-		v.run_decode()
-		v.run_execute()
-		v.run_memory()
-		v.run_writeback()
-
-		v.Dm.n_cycle += 5
-		v.Dm.n_executed_inst++
-	}
-}
+// NOT USED
+// func (v *Vm) RunSequential() {
+// 	for !v._halt {
+// 		v.run_fetch()
+// 		v.run_decode()
+// 		v.run_execute()
+// 		v.run_memory()
+// 		v.run_writeback()
+//
+// 		v.Dm.n_cycle += 5
+// 		v.Dm.n_executed_inst++
+// 	}
+// }
 
 func (v *Vm) RunPipelined() {
 	for !v._halt {
@@ -578,6 +605,8 @@ func (v *Vm) RunPipelined() {
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
 	v.Dm.n_cycle++
+
+	v.cycle_info = Cycle_Info{}
 
 	if v._mw_buff[1].valid && !v._halt {
 		v.run_writeback()
@@ -595,15 +624,22 @@ func (v *Vm) ExecuteCycle() {
 		v.run_decode()
 	}
 
-	// For diagnostic purposes
-	if v._stall_map > 0 {
-		v.Dm.n_stalls++
-	}
-
 	// If no stall, fetch the next instruction
 	if uint(v.pc) < v.Dm.program_size && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
+
 		v.Dm.n_executed_inst++
+	}
+
+	// Save the cycle state
+	{
+		// For diagnostic purposes
+		if v._stall_map > 0 {
+			v.Dm.n_stalls++
+			v.cycle_info.Stalled = true
+		}
+
+		v.Dm.Cycle_infos = append(v.Dm.Cycle_infos, v.cycle_info)
 	}
 
 	v.shiftPipelineBuffers()
