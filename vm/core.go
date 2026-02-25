@@ -626,6 +626,14 @@ func (v *Vm) ExecuteCycle() {
 		}
 
 		v.Dm.Cycle_infos = append(v.Dm.Cycle_infos, v.cycle_info)
+
+		if v.cycle_info.S1_bypass_status != 0{
+			v.Dm.n_forwards++
+		}
+
+		if v.cycle_info.S2_bypass_status != 0{
+			v.Dm.n_forwards++
+		}
 	}
 
 	v.shiftPipelineBuffers()
