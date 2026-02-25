@@ -577,20 +577,6 @@ func (v *Vm) run_writeback() {
 
 }
 
-// NOT USED
-// func (v *Vm) RunSequential() {
-// 	for !v._halt {
-// 		v.run_fetch()
-// 		v.run_decode()
-// 		v.run_execute()
-// 		v.run_memory()
-// 		v.run_writeback()
-//
-// 		v.Dm.n_cycle += 5
-// 		v.Dm.n_executed_inst++
-// 	}
-// }
-
 func (v *Vm) RunPipelined() {
 	for !v._halt {
 		v.ExecuteCycle()
