@@ -10,138 +10,7 @@ const (
 	STALL_BRANCH
 )
 
-type Instruction struct {
-	Op  Inst_Op
-	Rd  int32
-	Rs1 int32
-	Rs2 int32
-
-	_s1           int32
-	_s2           int32
-	_imm          int32
-	_result       int32
-	_fmt          Inst_Fmt
-	_ex_remaining int // Number of executions remaining
-}
-
-func newInstruction(Op Inst_Op, Rd int32, Rs1 int32, Rs2 int32) Instruction {
-	return Instruction{
-		Op:  Op,
-		Rd:  Rd,
-		Rs1: Rs1,
-		Rs2: Rs2,
-	}
-}
-
-// @Redundant: mostly same as getAluInputRegisters, find a way to remove one of the one of the functions
-func getSourceRegisters(inst Instruction) (int32, int32) {
-	switch inst._fmt {
-	case Fmt_R:
-		return inst.Rs1, inst.Rs2
-
-	case Fmt_I:
-		if inst.Op == Inst_Load {
-			return inst.Rs2, -1
-		} else {
-			return inst.Rs1, -1
-		}
-
-	case Fmt_S:
-		return inst.Rd, inst.Rs2
-
-	case Fmt_B:
-		return inst.Rd, inst.Rs1
-
-	case Fmt_U, Fmt_J:
-		return -1, -1
-
-	default:
-		log.Fatalf("Unexpected vm.Inst_Fmt: %#v", inst._fmt)
-		return -1, -1
-	}
-}
-
-func getAluInputRegisters(inst Instruction) (int32, int32) {
-	switch inst._fmt {
-	case Fmt_R:
-		return inst.Rs1, inst.Rs2
-
-	case Fmt_I:
-		if inst.Op == Inst_Load {
-			return inst.Rs2, -1
-		} else {
-			return inst.Rs1, -1
-		}
-
-	case Fmt_S:
-		return -1, inst.Rs2
-
-	case Fmt_B:
-		return inst.Rd, inst.Rs1
-
-	case Fmt_U, Fmt_J:
-		return -1, -1
-
-	default:
-		log.Fatalf("Unexpected vm.Inst_Fmt: %#v", inst._fmt)
-		return -1, -1
-	}
-}
-
-// This function checks if a register at decode stage can be forwarded later on.
-func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
-	if reg <= 0 {
-		return true
-	}
-
-	half_inst := vm._dx_buff[1].inst
-	full_inst := vm._xm_buff[1].inst // Enabled if and only if can't forward from inst_s1
-
-	// Check if bypass source instructions actually write to a register
-	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
-		// Compare the destination register with given source register
-		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
-			return true
-		}
-	}
-
-	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
-		// Compare the destination register with
-		if half_inst.Op != Inst_Load && full_inst.Rd == reg {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Gets the given register value from bypass.
-// If register number don't match, returns (-1, false).
-func getRegValueFromBypass(vm *Vm, reg int32) (int32, bypass_type, bool) {
-	if reg <= 0 {
-		return -1, 0, false
-	}
-
-	half_inst := vm._xm_buff[1].inst
-	full_inst := vm._mw_buff[1].inst // Enabled only if we can't forward from inst_s1
-
-	// Check if bypass source instructions actually write to a register
-	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
-		// Compare the destination register with given source register
-		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
-			return half_inst._result, BYPASS_XM, true
-		}
-	}
-
-	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
-		// Compare the destination register with
-		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
-			return full_inst._result, BYPASS_MW, true
-		}
-	}
-
-	return -1, 0, false
-}
+const WORD_SIZE = 4 // In bytes
 
 type Register struct {
 	Data int32
@@ -153,8 +22,6 @@ type Pipeline_Buffer struct {
 	inst  Instruction
 	valid bool
 }
-
-const WORD_SIZE = 4 // In bytes
 
 type Vm struct {
 	pc      int32
@@ -181,6 +48,8 @@ type Vm struct {
 
 	Dm         Diagnostics_Manager
 	cycle_info Cycle_Info
+
+	Bp Branch_Predictor
 }
 
 func CreateVm(mem_size, stack_size int) (*Vm, error) {
@@ -245,6 +114,61 @@ func (v *Vm) SetProgram(program []Instruction, pc int) {
 	v.Dm.n_cycle = 0
 	v.Dm.n_stalls = 0
 	v.Dm.n_executed_inst = 0
+}
+
+// This function checks if a register at decode stage can be forwarded later on.
+func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
+	if reg <= 0 {
+		return true
+	}
+
+	half_inst := vm._dx_buff[1].inst
+	full_inst := vm._xm_buff[1].inst // Enabled if and only if can't forward from inst_s1
+
+	// Check if bypass source instructions actually write to a register
+	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
+		// Compare the destination register with given source register
+		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
+			return true
+		}
+	}
+
+	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
+		// Compare the destination register with
+		if half_inst.Op != Inst_Load && full_inst.Rd == reg {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Gets the given register value from bypass.
+// If register number don't match, returns (-1, false).
+func getRegValueFromBypass(vm *Vm, reg int32) (int32, bypass_type, bool) {
+	if reg <= 0 {
+		return -1, 0, false
+	}
+
+	half_inst := vm._xm_buff[1].inst
+	full_inst := vm._mw_buff[1].inst // Enabled only if we can't forward from inst_s1
+
+	// Check if bypass source instructions actually write to a register
+	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
+		// Compare the destination register with given source register
+		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
+			return half_inst._result, BYPASS_XM, true
+		}
+	}
+
+	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
+		// Compare the destination register with
+		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
+			return full_inst._result, BYPASS_MW, true
+		}
+	}
+
+	return -1, 0, false
 }
 
 func (v *Vm) isControlInstruction(inst Instruction) bool {
@@ -627,11 +551,11 @@ func (v *Vm) ExecuteCycle() {
 
 		v.Dm.Cycle_infos = append(v.Dm.Cycle_infos, v.cycle_info)
 
-		if v.cycle_info.S1_bypass_status != 0{
+		if v.cycle_info.S1_bypass_status != 0 {
 			v.Dm.n_forwards++
 		}
 
-		if v.cycle_info.S2_bypass_status != 0{
+		if v.cycle_info.S2_bypass_status != 0 {
 			v.Dm.n_forwards++
 		}
 	}
