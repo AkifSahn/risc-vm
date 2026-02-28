@@ -18,7 +18,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	filename := "examples/pipeline_test.asm"
+	filename := "examples/factorial.asm"
 	err = machine.LoadProgramFromFile(filename)
 	if err != nil {
 		log.Printf("Failed to load program from '%s': %s", filename, err.Error())
