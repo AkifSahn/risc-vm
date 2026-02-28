@@ -76,6 +76,7 @@ func CreateVm(mem_size, stack_size int) (*Vm, error) {
 		program: make([]Instruction, 0),
 		memory:  make([]byte, mem_size),
 		Dm:      CreateDiagnosticsManager(),
+		Bp:      create_predictor(2),
 
 		_mem_size:   mem_size,
 		_stack_size: stack_size,
@@ -210,7 +211,17 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 	return false
 }
 
+// flushes the IF/ID and ID/EX pipeline buffers
+func (v *Vm) flush() {
+	v._fd_buff[0].valid = false
+	v._fd_buff[1].valid = false
+}
+
 func (v *Vm) run_fetch() {
+	if v.pc < 0 {
+		log.Fatalf("Incorrect pc value '%d'\n", v.pc)
+	}
+
 	inst := v.program[v.pc]
 
 	{
@@ -243,18 +254,19 @@ func (v *Vm) run_decode() {
 		// Feed the IF/ID buffer to itself to avoid draining it
 		v._fd_buff[0] = v._fd_buff[1]
 		v._fd_buff[0].valid = true
-		// fmt.Printf("\n\ncycle %d: STALL BEGIN\n", v.Dm.n_cycle)
-		// fmt.Printf("Inst: %#v\n", inst)
-
 		return
 	} else if v._stall_map&STALL_RAW != 0 {
 		v._stall_map &= ^STALL_RAW
-		// fmt.Printf("cycle %d: STALL END\n", v.Dm.n_cycle)
 	}
 
 	// If this is a branch instruction, stall the fetch until the branch addr is calculated
 	if v.isControlInstruction(inst) {
-		v._stall_map |= STALL_BRANCH
+		taken, target := v.Bp.predict(uint32(pc - 1))
+
+		if taken {
+			v.pc = int32(target)
+		}
+		// v._stall_map |= STALL_BRANCH
 	}
 
 	// Update the cyle info
@@ -344,6 +356,10 @@ func (v *Vm) run_execute() {
 		v.cycle_info.S2_bypass_status = t
 	}
 
+	// Only used if a branch instruction
+	var branch_target uint32
+	var branch_taken bool
+
 	switch inst.Op {
 	case Inst_Add:
 		inst._result = s1 + s2
@@ -384,7 +400,9 @@ func (v *Vm) run_execute() {
 
 	case Inst_Jalr:
 		inst._result = pc
-		v.pc = s1 + inst._imm
+		branch_taken = true
+		branch_target = uint32(s1 + inst._imm)
+		// v.pc = s1 + inst._imm
 
 	case Inst_Slli: // rd = rs1 << imm[0:4]
 		inst._result = s1 << inst._imm
@@ -403,24 +421,29 @@ func (v *Vm) run_execute() {
 
 	case Inst_Beq:
 		if s1 == s2 {
-			v.pc += inst._imm - 1 // v.pc holds the next instruction hence -1
+			branch_taken = true
 		}
+		branch_target = uint32(pc + inst._imm - 1) // v.pc holds the next instruction hence -1
 	case Inst_Bne:
 		if s1 != s2 {
-			v.pc += inst._imm - 1
+			branch_taken = true
 		}
+		branch_target = uint32(pc + inst._imm - 1)
 	case Inst_Blt:
 		if s1 < s2 {
-			v.pc += inst._imm - 1
+			branch_taken = true
 		}
+		branch_target = uint32(pc + inst._imm - 1)
 	case Inst_Bge:
 		if s1 >= s2 {
-			v.pc += inst._imm - 1
+			branch_taken = true
+			branch_target = uint32(pc + inst._imm - 1)
 		}
 
 	case Inst_Jal: // Jump And Link
 		inst._result = pc
-		v.pc += inst._imm - 1
+		branch_taken = true
+		branch_target = uint32(pc + inst._imm - 1)
 
 	case Inst_Lui:
 		inst._result = inst._imm
@@ -430,7 +453,20 @@ func (v *Vm) run_execute() {
 
 	// Branch address is calculated, we can stop stalling.
 	if v.isControlInstruction(inst) {
-		v._stall_map &= ^STALL_BRANCH
+		v.Dm.n_branch++
+
+		correct := v.Bp.update(uint32(pc-1), branch_target, branch_taken)
+		if !correct {
+			v.Dm.n_mispred++
+
+			v.flush()
+			if branch_taken {
+				v.pc = int32(branch_target)
+			} else {
+				v.pc = pc
+			}
+		}
+		// v._stall_map &= ^STALL_BRANCH
 	}
 
 	v._xm_buff[0].inst = inst
@@ -534,8 +570,7 @@ func (v *Vm) ExecuteCycle() {
 		v.run_decode()
 	}
 
-	// If no stall, fetch the next instruction
-	if uint(v.pc) < v.Dm.program_size && !v._halt && v._stall_map == 0 {
+	if v.pc < int32(v.Dm.program_size) && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
 
 		v.Dm.n_executed_inst++

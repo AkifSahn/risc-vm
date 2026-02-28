@@ -32,7 +32,9 @@ type Diagnostics_Manager struct {
 	n_executed_inst uint
 	n_cycle         uint
 	n_stalls        uint
-	n_forwards		uint
+	n_forwards      uint
+	n_branch        uint
+	n_mispred       uint
 
 	Cycle_infos []Cycle_Info
 }
@@ -57,6 +59,7 @@ func (dm *Diagnostics_Manager) PrintDiagnostics() {
 	fmt.Printf("%-30s %d\n", "cycles:", dm.n_cycle)
 	fmt.Printf("%-30s %d\n", "stalls:", dm.n_stalls)
 	fmt.Printf("%-30s %d\n", "forwards:", dm.n_forwards)
+	fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.n_branch-dm.n_mispred)/dm.n_branch)
 	fmt.Println("--- end of diagnostics ---")
 }
 
