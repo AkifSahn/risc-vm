@@ -37,6 +37,9 @@ type Diagnostics_Manager struct {
 	n_mispred       uint
 
 	Cycle_infos []Cycle_Info
+
+	bp_enabled         bool
+	forwarding_enabled bool
 }
 
 func CreateDiagnosticsManager() Diagnostics_Manager {
@@ -59,7 +62,17 @@ func (dm *Diagnostics_Manager) PrintDiagnostics() {
 	fmt.Printf("%-30s %d\n", "cycles:", dm.n_cycle)
 	fmt.Printf("%-30s %d\n", "stalls:", dm.n_stalls)
 	fmt.Printf("%-30s %d\n", "forwards:", dm.n_forwards)
-	fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.n_branch-dm.n_mispred)/dm.n_branch)
+
+	if dm.bp_enabled{
+		fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.n_branch-dm.n_mispred)/dm.n_branch)
+	}else{
+		fmt.Printf("%-30s %s\n", "prediction accuracy:", "-")
+	}
+
+	fmt.Println()
+
+	fmt.Printf("%-30s %#v\n", "forwarding:", dm.forwarding_enabled)
+	fmt.Printf("%-30s %#v\n", "branch prediction:", dm.bp_enabled)
 	fmt.Println("--- end of diagnostics ---")
 }
 

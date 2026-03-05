@@ -50,9 +50,12 @@ type Vm struct {
 	cycle_info Cycle_Info
 
 	Bp Branch_Predictor
+
+	_forwarding_enabled        bool
+	_branch_prediction_enabled bool
 }
 
-func CreateVm(mem_size, stack_size int) (*Vm, error) {
+func CreateVm(mem_size, stack_size int, forwarding, prediction bool) (*Vm, error) {
 	if mem_size <= 0 || stack_size <= 0 {
 		return nil, fmt.Errorf("Memory/stack size must be non-zero!")
 	}
@@ -80,7 +83,13 @@ func CreateVm(mem_size, stack_size int) (*Vm, error) {
 
 		_mem_size:   mem_size,
 		_stack_size: stack_size,
+
+		_forwarding_enabled:        forwarding,
+		_branch_prediction_enabled: prediction,
 	}
+
+	vm.Dm.forwarding_enabled = forwarding
+	vm.Dm.bp_enabled = prediction
 
 	// Initialize stack pointer to the MAX_ADDR
 	vm.registers[abiToRegNum["sp"]].Data = int32(mem_size)
@@ -123,6 +132,11 @@ func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
 		return true
 	}
 
+	// If forwarding is not enabled, well we can't forward
+	if !vm._forwarding_enabled {
+		return false
+	}
+
 	half_inst := vm._dx_buff[1].inst
 	full_inst := vm._xm_buff[1].inst // Enabled if and only if can't forward from inst_s1
 
@@ -148,6 +162,10 @@ func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
 // If register number don't match, returns (-1, false).
 func getRegValueFromBypass(vm *Vm, reg int32) (int32, bypass_type, bool) {
 	if reg <= 0 {
+		return -1, 0, false
+	}
+
+	if !vm._forwarding_enabled {
 		return -1, 0, false
 	}
 
@@ -261,12 +279,17 @@ func (v *Vm) run_decode() {
 
 	// If this is a branch instruction, stall the fetch until the branch addr is calculated
 	if v.isControlInstruction(inst) {
-		taken, target := v.Bp.predict(uint32(pc - 1))
+		// If branch prediction is enabled, do prediction.
+		// If not, just stall
+		if v._branch_prediction_enabled {
+			taken, target := v.Bp.predict(uint32(pc - 1))
 
-		if taken {
-			v.pc = int32(target)
+			if taken {
+				v.pc = int32(target)
+			}
+		} else {
+			v._stall_map |= STALL_BRANCH
 		}
-		// v._stall_map |= STALL_BRANCH
 	}
 
 	// Update the cyle info
@@ -455,18 +478,22 @@ func (v *Vm) run_execute() {
 	if v.isControlInstruction(inst) {
 		v.Dm.n_branch++
 
-		correct := v.Bp.update(uint32(pc-1), branch_target, branch_taken)
-		if !correct {
-			v.Dm.n_mispred++
-
-			v.flush()
-			if branch_taken {
-				v.pc = int32(branch_target)
-			} else {
-				v.pc = pc
+		// If prediction is enabled, update the predictor and flush if necessary
+		if v._branch_prediction_enabled {
+			correct := v.Bp.update(uint32(pc-1), branch_target, branch_taken)
+			if !correct {
+				v.Dm.n_mispred++
+				v.flush()
 			}
+		} else {
+			v._stall_map &= ^STALL_BRANCH
 		}
-		// v._stall_map &= ^STALL_BRANCH
+
+		if branch_taken {
+			v.pc = int32(branch_target)
+		} else {
+			v.pc = pc
+		}
 	}
 
 	v._xm_buff[0].inst = inst
