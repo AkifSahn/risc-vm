@@ -86,7 +86,7 @@ func (v *Vm) PrintRegister(reg_str string) {
 	reg := v.registers[reg_num]
 
 	status := "free"
-	if reg.Busy {
+	if reg.Busy > 0 {
 		status = "busy"
 	}
 
@@ -98,7 +98,7 @@ func (v *Vm) DumpRegisters(format Dump_Format) {
 	fmt.Println("Register Dump: ")
 	for i, reg := range v.registers {
 		status := "free"
-		if reg.Busy {
+		if reg.Busy > 0 {
 			status = "busy"
 		}
 

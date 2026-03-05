@@ -14,7 +14,11 @@ const WORD_SIZE = 4 // In bytes
 
 type Register struct {
 	Data int32
-	Busy bool
+	// This is not bool because there can be multiple instructions with same destination register
+	// And one register may free it when it is actually not free.
+	// So, instead of true/false, we count how many instructions still want to write to this
+	// If 0, then it is free.
+	Busy int32
 }
 
 type Pipeline_Buffer struct {
@@ -150,7 +154,7 @@ func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
 
 	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
 		// Compare the destination register with
-		if half_inst.Op != Inst_Load && full_inst.Rd == reg {
+		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
 			return true
 		}
 	}
@@ -209,7 +213,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 	rs1, rs2 := getSourceRegisters(inst)
 	if rs1 > 0 {
-		if v.registers[rs1].Busy {
+		if v.registers[rs1].Busy > 0 {
 			// FIX: Checking the inst.Op == Inst_Store is not a good approach
 			// We need this check because the first source is not an ALU input and can't be forwarded
 			if inst.Op == Inst_Store || !checkRegisterForwardDecode(v, rs1) {
@@ -219,7 +223,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 	}
 
 	if rs2 > 0 {
-		if v.registers[rs2].Busy {
+		if v.registers[rs2].Busy > 0 {
 			if !checkRegisterForwardDecode(v, rs2) {
 				return true
 			}
@@ -268,7 +272,6 @@ func (v *Vm) run_decode() {
 
 	if v.shouldStallDecode(inst) {
 		v._stall_map |= STALL_RAW
-
 		// Feed the IF/ID buffer to itself to avoid draining it
 		v._fd_buff[0] = v._fd_buff[1]
 		v._fd_buff[0].valid = true
@@ -301,7 +304,7 @@ func (v *Vm) run_decode() {
 		inst._s2 = v.registers[inst.Rs2].Data
 
 		// Set the destination register as busy
-		v.registers[inst.Rd].Busy = true
+		v.registers[inst.Rd].Busy++
 	case Fmt_I:
 		// In load, immediate is placed in a different position so we check it explicitly.
 		if inst.Op == Inst_Load {
@@ -313,7 +316,7 @@ func (v *Vm) run_decode() {
 		}
 
 		// Set the destination register as busy
-		v.registers[inst.Rd].Busy = true
+		v.registers[inst.Rd].Busy++
 	case Fmt_S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._imm = inst.Rs1
@@ -324,10 +327,10 @@ func (v *Vm) run_decode() {
 		inst._imm = inst.Rs2
 	case Fmt_U:
 		inst._imm = inst.Rs1
-		v.registers[inst.Rd].Busy = true
+		v.registers[inst.Rd].Busy++
 	case Fmt_J:
 		inst._imm = inst.Rs1
-		v.registers[inst.Rd].Busy = true
+		v.registers[inst.Rd].Busy++
 	}
 
 	v._dx_buff[0].inst = inst
@@ -552,7 +555,7 @@ func (v *Vm) run_writeback() {
 	// We don't want to writeback if instruction type is S
 	if inst._fmt == Fmt_R || inst._fmt == Fmt_I || inst._fmt == Fmt_U || inst._fmt == Fmt_J {
 		// set the destination register as free
-		v.registers[inst.Rd].Busy = false
+		v.registers[inst.Rd].Busy--
 
 		// We don't allow writes to x0 register
 		if inst.Rd == 0 {
