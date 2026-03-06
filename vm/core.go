@@ -481,9 +481,10 @@ func (v *Vm) run_execute() {
 	if v.isControlInstruction(inst) {
 		v.Dm.n_branch++
 
+		correct := true
 		// If prediction is enabled, update the predictor and flush if necessary
 		if v._branch_prediction_enabled {
-			correct := v.Bp.update(uint32(pc-1), branch_target, branch_taken)
+			correct = v.Bp.update(uint32(pc-1), branch_target, branch_taken)
 			if !correct {
 				v.Dm.n_mispred++
 				v.flush()
@@ -492,11 +493,16 @@ func (v *Vm) run_execute() {
 			v._stall_map &= ^STALL_BRANCH
 		}
 
-		if branch_taken {
-			v.pc = int32(branch_target)
-		} else {
-			v.pc = pc
+		// If not, correct do the correct branch
+		// If BP is not enabled then the 'correct' will stay as true and pc will be updated.
+		if !correct{
+			if branch_taken {
+				v.pc = int32(branch_target)
+			} else {
+				v.pc = pc
+			}
 		}
+
 	}
 
 	v._xm_buff[0].inst = inst
