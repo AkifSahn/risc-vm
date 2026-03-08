@@ -12,7 +12,13 @@ const MEM_SIZE = 400
 const STACK_SIZE = 200
 
 func main() {
-	machine, err := vm.CreateVm(MEM_SIZE, STACK_SIZE, true, true)
+	config, err := vm.CreateConfig(MEM_SIZE, STACK_SIZE, true, true)
+	if err != nil {
+		fmt.Printf("Configuration error: %s", err.Error())
+		os.Exit(1)
+	}
+
+	machine, err := vm.CreateVm(*config)
 	if err != nil {
 		fmt.Printf("Failed to create vm: %s", err.Error())
 		os.Exit(1)

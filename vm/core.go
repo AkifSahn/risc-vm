@@ -27,39 +27,14 @@ type Pipeline_Buffer struct {
 	valid bool
 }
 
-type Vm struct {
-	pc      int32
-	program []Instruction
-
-	registers   [32]Register
-	memory      []byte
-	_mem_size   int // In bytes
-	_stack_size int // In bytes
-
-	_fd_buff [2]Pipeline_Buffer
-	_dx_buff [2]Pipeline_Buffer
-	_xm_buff [2]Pipeline_Buffer
-	_mw_buff [2]Pipeline_Buffer
-
-	_halt bool
-
-	// Holds the instruction execute cycle numbers.
-	_instCycleTable map[Inst_Op]int
-
-	// Bitflag for different stalls.
-	// Each stall is same in principle, but their cause may be different.
-	_stall_map byte
-
-	Dm         Diagnostics_Manager
-	cycle_info Cycle_Info
-
-	Bp Branch_Predictor
-
-	_forwarding_enabled        bool
-	_branch_prediction_enabled bool
+type Vm_Config struct {
+	mem_size                  int // In bytes
+	stack_size                int // In bytes
+	forwarding_enabled        bool
+	bp_enabled bool
 }
 
-func CreateVm(mem_size, stack_size int, forwarding, prediction bool) (*Vm, error) {
+func CreateConfig(mem_size, stack_size int, forwarding, branch_prediction bool) (*Vm_Config, error) {
 	if mem_size <= 0 || stack_size <= 0 {
 		return nil, fmt.Errorf("Memory/stack size must be non-zero!")
 	}
@@ -79,24 +54,57 @@ func CreateVm(mem_size, stack_size int, forwarding, prediction bool) (*Vm, error
 			stack_size, mem_size)
 	}
 
+	return &Vm_Config{
+		mem_size:                  mem_size,
+		stack_size:                stack_size,
+		forwarding_enabled:        forwarding,
+		bp_enabled: branch_prediction,
+	}, nil
+}
+
+type Vm struct {
+	Config     Vm_Config
+	Dm         Diagnostics_Manager
+	Bp         Branch_Predictor
+	cycle_info Cycle_Info
+
+	pc      int32
+	program []Instruction
+
+	registers [32]Register
+	memory    []byte
+
+	_fd_buff [2]Pipeline_Buffer
+	_dx_buff [2]Pipeline_Buffer
+	_xm_buff [2]Pipeline_Buffer
+	_mw_buff [2]Pipeline_Buffer
+
+	// Holds the instruction execute cycle numbers.
+	_instCycleTable map[Inst_Op]int
+
+	// Bitflag for different stalls.
+	// Each stall is same in principle, but their cause may be different.
+	_stall_map byte
+
+	_halt bool
+}
+
+func CreateVm(config Vm_Config) (*Vm, error) {
+
 	vm := Vm{
 		program: make([]Instruction, 0),
-		memory:  make([]byte, mem_size),
+		memory:  make([]byte, config.mem_size),
 		Dm:      CreateDiagnosticsManager(),
 		Bp:      create_predictor(2),
-
-		_mem_size:   mem_size,
-		_stack_size: stack_size,
-
-		_forwarding_enabled:        forwarding,
-		_branch_prediction_enabled: prediction,
+		Config: config,
 	}
 
-	vm.Dm.forwarding_enabled = forwarding
-	vm.Dm.bp_enabled = prediction
+	// TODO: Is this good?
+	vm.Dm.forwarding_enabled = config.forwarding_enabled
+	vm.Dm.bp_enabled = config.bp_enabled
 
 	// Initialize stack pointer to the MAX_ADDR
-	vm.registers[abiToRegNum["sp"]].Data = int32(mem_size)
+	vm.registers[abiToRegNum["sp"]].Data = int32(config.mem_size)
 
 	// Fill the instCycleTable to default values
 	{
@@ -137,7 +145,7 @@ func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
 	}
 
 	// If forwarding is not enabled, well we can't forward
-	if !vm._forwarding_enabled {
+	if !vm.Config.forwarding_enabled {
 		return false
 	}
 
@@ -169,7 +177,7 @@ func getRegValueFromBypass(vm *Vm, reg int32) (int32, bypass_type, bool) {
 		return -1, 0, false
 	}
 
-	if !vm._forwarding_enabled {
+	if !vm.Config.forwarding_enabled {
 		return -1, 0, false
 	}
 
@@ -284,7 +292,7 @@ func (v *Vm) run_decode() {
 	if v.isControlInstruction(inst) {
 		// If branch prediction is enabled, do prediction.
 		// If not, just stall
-		if v._branch_prediction_enabled {
+		if v.Config.bp_enabled {
 			taken, target := v.Bp.predict(uint32(pc - 1))
 
 			if taken {
@@ -483,7 +491,7 @@ func (v *Vm) run_execute() {
 
 		correct := false
 		// If prediction is enabled, update the predictor and flush if necessary
-		if v._branch_prediction_enabled {
+		if v.Config.bp_enabled {
 			correct = v.Bp.update(uint32(pc-1), branch_target, branch_taken)
 			if !correct {
 				v.Dm.n_mispred++
@@ -495,7 +503,7 @@ func (v *Vm) run_execute() {
 
 		// If not, correct do the correct branch
 		// If BP is not enabled then the 'correct' will stay as false and pc will be updated.
-		if !correct{
+		if !correct {
 			if branch_taken {
 				v.pc = int32(branch_target)
 			} else {
