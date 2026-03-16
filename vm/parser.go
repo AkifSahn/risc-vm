@@ -264,9 +264,9 @@ func expandPseudoInstruction(ps Instruction) Instruction {
 // Symbol table holding label_str -> line_num
 type Symbol_Table map[string]int
 
-var symbol_table = make(Symbol_Table)
+var symbol_table Symbol_Table
 
-var insts_missing_label = make(map[int]string, 0)
+var insts_missing_label map[int]string
 
 var line_num int
 
@@ -342,6 +342,9 @@ func fillInstToken(inst *Instruction, tok Token) error {
 	switch tok.Pos {
 	case 0:
 		inst.Op = stringToOpcode(tok.Val)
+		if inst.Op == _Inst_Unknown{
+			return fmt.Errorf("Unknown opcode: '%s'\n", tok.Val)
+		}
 	case 1:
 		inst.Rd = parseRegisterValue(tok.Val)
 	case 2:
@@ -366,7 +369,10 @@ func ParseProgramFromFile(filename string) ([]Instruction, int, error) {
 	return ParseProgramFromReader(file)
 }
 
-func ParseProgramFromReader(r io.Reader) ([]Instruction, int, error){
+func ParseProgramFromReader(r io.Reader) ([]Instruction, int, error) {
+	symbol_table = make(Symbol_Table)
+	insts_missing_label = make(map[int]string, 0)
+
 	program := make([]Instruction, 0)
 
 	program = append(program, newInstruction(Inst_End, 0, 0, 0))
