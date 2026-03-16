@@ -3,6 +3,7 @@ package vm
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -362,12 +363,16 @@ func ParseProgramFromFile(filename string) ([]Instruction, int, error) {
 	}
 	defer file.Close()
 
+	return ParseProgramFromReader(file)
+}
+
+func ParseProgramFromReader(r io.Reader) ([]Instruction, int, error){
 	program := make([]Instruction, 0)
 
 	program = append(program, newInstruction(Inst_End, 0, 0, 0))
 	line_num = 1
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(r)
 
 	// First fill the symbol table for accessing label addresses
 	for scanner.Scan() {
@@ -428,7 +433,7 @@ func ParseProgramFromFile(filename string) ([]Instruction, int, error) {
 		}
 	}
 
-	if err = scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil {
 		return nil, -1, err
 	}
 

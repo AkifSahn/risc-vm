@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 	"log"
+	"strings"
 )
 
 const (
@@ -122,6 +123,14 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 func (v *Vm) LoadProgramFromFile(fileName string) error {
 	// Parse the file etc...
 	program, pc, err := ParseProgramFromFile(fileName)
+	v.SetProgram(program, pc)
+
+	return err
+}
+
+func (v *Vm) LoadProgramFromStr(programStr string) error{
+	r := strings.NewReader(programStr)
+	program, pc, err := ParseProgramFromReader(r)
 	v.SetProgram(program, pc)
 
 	return err
