@@ -1,10 +1,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
+	"github.com/AkifSahn/risc-vm/rest"
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
@@ -12,6 +15,27 @@ const MEM_SIZE = 400
 const STACK_SIZE = 200
 
 func main() {
+	serve := flag.Bool("serve", false, "start the REST API server")
+	port := flag.String("port", "8080", "server port")
+	filename := flag.String("file", "", "assembly file to run")
+
+	flag.Parse()
+
+	if *serve{
+		mux := rest.SetupRoutes()
+
+		host := "127.0.0.1"
+
+		fmt.Printf("Server started at %s:%s\n", host, *port)
+		http.ListenAndServe(fmt.Sprintf("%s:%s", host, *port), mux)
+	}else if *filename == ""{
+		fmt.Println("Please provide a filename to simulate!")
+		fmt.Println()
+		flag.Usage()
+		return
+	}
+
+
 	config, err := vm.CreateConfig(MEM_SIZE, STACK_SIZE, true, true)
 	if err != nil {
 		fmt.Printf("Configuration error: %s", err.Error())
@@ -24,8 +48,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	filename := "examples/loop.asm"
-	err = machine.LoadProgramFromFile(filename)
+	err = machine.LoadProgramFromFile(*filename)
 	if err != nil {
 		log.Printf("Failed to load program from '%s': %s", filename, err.Error())
 		os.Exit(1)
