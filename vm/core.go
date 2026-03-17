@@ -69,11 +69,11 @@ type Vm struct {
 	Bp         Branch_Predictor
 	cycle_info Cycle_Info
 
-	pc      int32
+	Pc      int32
 	program []Instruction
 
-	registers [32]Register
-	memory    []byte
+	Registers [32]Register
+	Memory    []byte
 
 	// Memory and register diff arrays holding the updated addr/idx for memory cells and registers for the last cycle.
 	// This is useful when we only want to know which memory cells and registers are changed in a cycle.
@@ -99,18 +99,18 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 
 	vm := Vm{
 		program: make([]Instruction, 0),
-		memory:  make([]byte, config.mem_size),
+		Memory:  make([]byte, config.mem_size),
 		Dm:      CreateDiagnosticsManager(),
 		Bp:      create_predictor(2),
 		Config:  config,
 	}
 
 	// TODO: Is this good?
-	vm.Dm.forwarding_enabled = config.forwarding_enabled
-	vm.Dm.bp_enabled = config.bp_enabled
+	vm.Dm.Forwarding_enabled = config.forwarding_enabled
+	vm.Dm.Bp_enabled = config.bp_enabled
 
 	// Initialize stack pointer to the MAX_ADDR
-	vm.registers[abiToRegNum["sp"]].Data = int32(config.mem_size)
+	vm.Registers[abiToRegNum["sp"]].Data = int32(config.mem_size)
 
 	// Fill the instCycleTable to default values
 	{
@@ -142,14 +142,14 @@ func (v *Vm) LoadProgramFromStr(programStr string) error {
 }
 
 func (v *Vm) SetProgram(program []Instruction, pc int) {
-	v.pc = int32(pc)
+	v.Pc = int32(pc)
 	v.program = program
 
 	// Reset the Diagnostics_Manager
-	v.Dm.program_size = uint(len(program))
-	v.Dm.n_cycle = 0
-	v.Dm.n_stalls = 0
-	v.Dm.n_executed_inst = 0
+	v.Dm.Program_size = uint(len(program))
+	v.Dm.N_cycle = 0
+	v.Dm.N_stalls = 0
+	v.Dm.N_executed_inst = 0
 }
 
 // This function checks if a register at decode stage can be forwarded later on.
@@ -235,7 +235,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 	rs1, rs2 := getSourceRegisters(inst)
 	if rs1 > 0 {
-		if v.registers[rs1].Busy > 0 {
+		if v.Registers[rs1].Busy > 0 {
 			// FIX: Checking the inst.Op == Inst_Store is not a good approach
 			// We need this check because the first source is not an ALU input and can't be forwarded
 			if inst.Op == Inst_Store || !checkRegisterForwardDecode(v, rs1) {
@@ -245,7 +245,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 	}
 
 	if rs2 > 0 {
-		if v.registers[rs2].Busy > 0 {
+		if v.Registers[rs2].Busy > 0 {
 			if !checkRegisterForwardDecode(v, rs2) {
 				return true
 			}
@@ -262,11 +262,11 @@ func (v *Vm) flush() {
 }
 
 func (v *Vm) run_fetch() {
-	if v.pc < 0 {
-		log.Fatalf("Incorrect pc value '%d'\n", v.pc)
+	if v.Pc < 0 {
+		log.Fatalf("Incorrect pc value '%d'\n", v.Pc)
 	}
 
-	inst := v.program[v.pc]
+	inst := v.program[v.Pc]
 
 	{
 		n, ok := v._instCycleTable[inst.Op]
@@ -278,13 +278,13 @@ func (v *Vm) run_fetch() {
 
 	// Update the cyle info
 	{
-		v.cycle_info.Stage_pcs[0] = uint32(v.pc)
+		v.cycle_info.Stage_pcs[0] = uint32(v.Pc)
 	}
 
-	v.pc++
+	v.Pc++
 
 	v._fd_buff[0].inst = inst
-	v._fd_buff[0].pc = v.pc
+	v._fd_buff[0].pc = v.Pc
 	v._fd_buff[0].valid = true
 }
 
@@ -310,7 +310,7 @@ func (v *Vm) run_decode() {
 			taken, target := v.Bp.predict(uint32(pc - 1))
 
 			if taken {
-				v.pc = int32(target)
+				v.Pc = int32(target)
 			}
 		} else {
 			v._stall_map |= STALL_BRANCH
@@ -322,40 +322,40 @@ func (v *Vm) run_decode() {
 
 	switch inst._fmt {
 	case Fmt_R:
-		inst._s1 = v.registers[inst.Rs1].Data
-		inst._s2 = v.registers[inst.Rs2].Data
+		inst._s1 = v.Registers[inst.Rs1].Data
+		inst._s2 = v.Registers[inst.Rs2].Data
 
 		// Set the destination register as busy
-		v.registers[inst.Rd].Busy++
+		v.Registers[inst.Rd].Busy++
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	case Fmt_I:
 		// In load, immediate is placed in a different position so we check it explicitly.
 		if inst.Op == Inst_Load {
 			inst._imm = inst.Rs1
-			inst._s1 = v.registers[inst.Rs2].Data
+			inst._s1 = v.Registers[inst.Rs2].Data
 		} else {
-			inst._s1 = v.registers[inst.Rs1].Data
+			inst._s1 = v.Registers[inst.Rs1].Data
 			inst._imm = inst.Rs2
 		}
 
 		// Set the destination register as busy
-		v.registers[inst.Rd].Busy++
+		v.Registers[inst.Rd].Busy++
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	case Fmt_S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
-		inst._s1 = v.registers[inst.Rd].Data
+		inst._s1 = v.Registers[inst.Rd].Data
 		inst._imm = inst.Rs1
-		inst._s2 = v.registers[inst.Rs2].Data
+		inst._s2 = v.Registers[inst.Rs2].Data
 	case Fmt_B:
-		inst._s1 = v.registers[inst.Rd].Data
-		inst._s2 = v.registers[inst.Rs1].Data
+		inst._s1 = v.Registers[inst.Rd].Data
+		inst._s2 = v.Registers[inst.Rs1].Data
 		inst._imm = inst.Rs2
 	case Fmt_U:
 		inst._imm = inst.Rs1
-		v.registers[inst.Rd].Busy++
+		v.Registers[inst.Rd].Busy++
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	case Fmt_J:
 		inst._imm = inst.Rs1
-		v.registers[inst.Rd].Busy++
+		v.Registers[inst.Rd].Busy++
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	}
 
@@ -505,14 +505,14 @@ func (v *Vm) run_execute() {
 
 	// Branch address is calculated, we can stop stalling.
 	if v.isControlInstruction(inst) {
-		v.Dm.n_branch++
+		v.Dm.N_branch++
 
 		correct := false
 		// If prediction is enabled, update the predictor and flush if necessary
 		if v.Config.bp_enabled {
 			correct = v.Bp.update(uint32(pc-1), branch_target, branch_taken)
 			if !correct {
-				v.Dm.n_mispred++
+				v.Dm.N_mispred++
 				v.flush()
 			}
 		} else {
@@ -523,9 +523,9 @@ func (v *Vm) run_execute() {
 		// If BP is not enabled then the 'correct' will stay as false and pc will be updated.
 		if !correct {
 			if branch_taken {
-				v.pc = int32(branch_target)
+				v.Pc = int32(branch_target)
 			} else {
-				v.pc = pc
+				v.Pc = pc
 			}
 		}
 
@@ -553,18 +553,18 @@ func (v *Vm) run_memory() {
 	case Inst_Store: // Store word
 		u := uint32(inst._s1)
 		addr := inst._result
-		v.memory[addr+0] = byte(u >> 0)
-		v.memory[addr+1] = byte(u >> 8)
-		v.memory[addr+2] = byte(u >> 16)
-		v.memory[addr+3] = byte(u >> 24)
+		v.Memory[addr+0] = byte(u >> 0)
+		v.Memory[addr+1] = byte(u >> 8)
+		v.Memory[addr+2] = byte(u >> 16)
+		v.Memory[addr+3] = byte(u >> 24)
 
 		v.Memory_diff_addr = append(v.Memory_diff_addr, uint32(addr))
 	case Inst_Load: // Load word
 		addr := inst._result
-		u := uint32(v.memory[addr+0]) |
-			uint32(v.memory[addr+1])<<8 |
-			uint32(v.memory[addr+2])<<16 |
-			uint32(v.memory[addr+3])<<24
+		u := uint32(v.Memory[addr+0]) |
+			uint32(v.Memory[addr+1])<<8 |
+			uint32(v.Memory[addr+2])<<16 |
+			uint32(v.Memory[addr+3])<<24
 
 		inst._result = int32(u)
 	}
@@ -589,14 +589,14 @@ func (v *Vm) run_writeback() {
 	// We don't want to writeback if instruction type is S
 	if inst._fmt == Fmt_R || inst._fmt == Fmt_I || inst._fmt == Fmt_U || inst._fmt == Fmt_J {
 		// set the destination register as free
-		v.registers[inst.Rd].Busy--
+		v.Registers[inst.Rd].Busy--
 
 		// We don't allow writes to x0 register
 		if inst.Rd == 0 {
 			return
 		}
 
-		v.registers[inst.Rd].Data = inst._result
+		v.Registers[inst.Rd].Data = inst._result
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	}
 
@@ -615,7 +615,7 @@ func (v *Vm) RunPipelined() {
 // This functions does exactly that, each stage has it's own instruction.
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
-	v.Dm.n_cycle++
+	v.Dm.N_cycle++
 
 	v.cycle_info = Cycle_Info{}
 
@@ -639,28 +639,28 @@ func (v *Vm) ExecuteCycle() {
 		v.run_decode()
 	}
 
-	if v.pc < int32(v.Dm.program_size) && !v._halt && v._stall_map == 0 {
+	if v.Pc < int32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
 
-		v.Dm.n_executed_inst++
+		v.Dm.N_executed_inst++
 	}
 
 	// Save the cycle state
 	{
 		// For diagnostic purposes
 		if v._stall_map > 0 {
-			v.Dm.n_stalls++
+			v.Dm.N_stalls++
 			v.cycle_info.Stalled = true
 		}
 
 		v.Dm.Cycle_infos = append(v.Dm.Cycle_infos, v.cycle_info)
 
 		if v.cycle_info.S1_bypass_status != 0 {
-			v.Dm.n_forwards++
+			v.Dm.N_forwards++
 		}
 
 		if v.cycle_info.S2_bypass_status != 0 {
-			v.Dm.n_forwards++
+			v.Dm.N_forwards++
 		}
 	}
 

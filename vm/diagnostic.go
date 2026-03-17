@@ -28,18 +28,18 @@ type Cycle_Info struct {
 }
 
 type Diagnostics_Manager struct {
-	program_size    uint
-	n_executed_inst uint
-	n_cycle         uint
-	n_stalls        uint
-	n_forwards      uint
-	n_branch        uint
-	n_mispred       uint
+	Program_size    uint
+	N_executed_inst uint
+	N_cycle         uint
+	N_stalls        uint
+	N_forwards      uint
+	N_branch        uint
+	N_mispred       uint
 
 	Cycle_infos []Cycle_Info
 
-	bp_enabled         bool
-	forwarding_enabled bool
+	Bp_enabled         bool
+	Forwarding_enabled bool
 }
 
 func CreateDiagnosticsManager() Diagnostics_Manager {
@@ -47,27 +47,27 @@ func CreateDiagnosticsManager() Diagnostics_Manager {
 }
 
 func (dm *Diagnostics_Manager) CalculateCpi() float32 {
-	if dm.n_cycle <= 0 && dm.n_executed_inst <= 0 {
+	if dm.N_cycle <= 0 && dm.N_executed_inst <= 0 {
 		return -1
 	}
 
-	return float32(dm.n_cycle) / float32(dm.n_executed_inst)
+	return float32(dm.N_cycle) / float32(dm.N_executed_inst)
 }
 
 func (dm *Diagnostics_Manager) PrintDiagnostics() {
 	fmt.Println("--- Diagnostics ---")
-	fmt.Printf("%-30s %d\n", "Program size:", dm.program_size)
+	fmt.Printf("%-30s %d\n", "Program size:", dm.Program_size)
 	fmt.Printf("%-30s %.2f\n", "CPI:", dm.CalculateCpi())
-	fmt.Printf("%-30s %d\n", "instructions executed:", dm.n_executed_inst)
-	fmt.Printf("%-30s %d\n", "cycles:", dm.n_cycle)
-	fmt.Printf("%-30s %d\n", "stalls:", dm.n_stalls)
-	fmt.Printf("%-30s %d\n", "forwards:", dm.n_forwards)
+	fmt.Printf("%-30s %d\n", "instructions executed:", dm.N_executed_inst)
+	fmt.Printf("%-30s %d\n", "cycles:", dm.N_cycle)
+	fmt.Printf("%-30s %d\n", "stalls:", dm.N_stalls)
+	fmt.Printf("%-30s %d\n", "forwards:", dm.N_forwards)
 
-	if dm.bp_enabled {
-		if dm.n_branch <= 0 {
+	if dm.Bp_enabled {
+		if dm.N_branch <= 0 {
 			fmt.Printf("%-30s %s\n", "prediction accuracy:", "No branches")
-		}else{
-			fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.n_branch-dm.n_mispred)/dm.n_branch)
+		} else {
+			fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.N_branch-dm.N_mispred)/dm.N_branch)
 		}
 	} else {
 		fmt.Printf("%-30s %s\n", "prediction accuracy:", "-")
@@ -75,8 +75,8 @@ func (dm *Diagnostics_Manager) PrintDiagnostics() {
 
 	fmt.Println()
 
-	fmt.Printf("%-30s %#v\n", "forwarding:", dm.forwarding_enabled)
-	fmt.Printf("%-30s %#v\n", "branch prediction:", dm.bp_enabled)
+	fmt.Printf("%-30s %#v\n", "forwarding:", dm.Forwarding_enabled)
+	fmt.Printf("%-30s %#v\n", "branch prediction:", dm.Bp_enabled)
 	fmt.Println("--- end of diagnostics ---")
 }
 
@@ -87,7 +87,7 @@ func (v *Vm) PrintRegister(reg_str string) {
 		return
 	}
 
-	reg := v.registers[reg_num]
+	reg := v.Registers[reg_num]
 
 	status := "free"
 	if reg.Busy > 0 {
@@ -100,7 +100,7 @@ func (v *Vm) PrintRegister(reg_str string) {
 func (v *Vm) DumpRegisters(format Dump_Format) {
 	fmt.Println("------------")
 	fmt.Println("Register Dump: ")
-	for i, reg := range v.registers {
+	for i, reg := range v.Registers {
 		status := "free"
 		if reg.Busy > 0 {
 			status = "busy"
@@ -122,26 +122,26 @@ func (v *Vm) DumpMemory(start, end int, format Dump_Format) {
 	var val int32
 
 	for i := start; i < end; i += 4 {
-		val = int32(uint32(v.memory[i]) |
-			uint32(v.memory[i+1])<<8 |
-			uint32(v.memory[i+2])<<16 |
-			uint32(v.memory[i+3])<<24)
+		val = int32(uint32(v.Memory[i]) |
+			uint32(v.Memory[i+1])<<8 |
+			uint32(v.Memory[i+2])<<16 |
+			uint32(v.Memory[i+3])<<24)
 
 		fmt.Printf("\033[0;33m%d\033[0m : ", i)
 		switch format {
 		case DUMP_BIN:
-			fmt.Printf("%.8b %.8b %.8b %.8b", v.memory[i], v.memory[i+1], v.memory[i+2], v.memory[i+3])
+			fmt.Printf("%.8b %.8b %.8b %.8b", v.Memory[i], v.Memory[i+1], v.Memory[i+2], v.Memory[i+3])
 			fmt.Printf(" = %.32b (binary)", val)
 		case DUMP_HEX:
-			fmt.Printf("%.2X %.2X %.2X %.2X", v.memory[i], v.memory[i+1], v.memory[i+2], v.memory[i+3])
+			fmt.Printf("%.2X %.2X %.2X %.2X", v.Memory[i], v.Memory[i+1], v.Memory[i+2], v.Memory[i+3])
 			fmt.Printf(" = %.4X (hex)", val)
 		case DUMP_DEC:
-			fmt.Printf("%3d %3d %3d %3d", v.memory[i], v.memory[i+1], v.memory[i+2], v.memory[i+3])
+			fmt.Printf("%3d %3d %3d %3d", v.Memory[i], v.Memory[i+1], v.Memory[i+2], v.Memory[i+3])
 			fmt.Printf(" = %d (decimal)", val)
 
 		}
 
-		if v.registers[abiToRegNum["sp"]].Data == int32(i) {
+		if v.Registers[abiToRegNum["sp"]].Data == int32(i) {
 			fmt.Print(" <- \033[0;31mSP\033[0m")
 		}
 		fmt.Println()
@@ -150,7 +150,7 @@ func (v *Vm) DumpMemory(start, end int, format Dump_Format) {
 
 func (v *Vm) DumpStack(format Dump_Format) {
 	fmt.Println("------------")
-	fmt.Printf("Stack Dump: Sp = %d\n", v.registers[abiToRegNum["sp"]].Data)
+	fmt.Printf("Stack Dump: Sp = %d\n", v.Registers[abiToRegNum["sp"]].Data)
 
 	s_start := v.Config.mem_size - v.Config.stack_size
 	s_end := v.Config.mem_size
