@@ -63,9 +63,13 @@ func (dm *Diagnostics_Manager) PrintDiagnostics() {
 	fmt.Printf("%-30s %d\n", "stalls:", dm.n_stalls)
 	fmt.Printf("%-30s %d\n", "forwards:", dm.n_forwards)
 
-	if dm.bp_enabled{
-		fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.n_branch-dm.n_mispred)/dm.n_branch)
-	}else{
+	if dm.bp_enabled {
+		if dm.n_branch <= 0 {
+			fmt.Printf("%-30s %s\n", "prediction accuracy:", "No branches")
+		}else{
+			fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.n_branch-dm.n_mispred)/dm.n_branch)
+		}
+	} else {
 		fmt.Printf("%-30s %s\n", "prediction accuracy:", "-")
 	}
 
