@@ -29,10 +29,10 @@ type Pipeline_Buffer struct {
 }
 
 type Vm_Config struct {
-	mem_size                  int // In bytes
-	stack_size                int // In bytes
-	forwarding_enabled        bool
-	bp_enabled bool
+	mem_size           int // In bytes
+	stack_size         int // In bytes
+	forwarding_enabled bool
+	bp_enabled         bool
 }
 
 func CreateConfig(mem_size, stack_size int, forwarding, branch_prediction bool) (*Vm_Config, error) {
@@ -56,10 +56,10 @@ func CreateConfig(mem_size, stack_size int, forwarding, branch_prediction bool) 
 	}
 
 	return &Vm_Config{
-		mem_size:                  mem_size,
-		stack_size:                stack_size,
-		forwarding_enabled:        forwarding,
-		bp_enabled: branch_prediction,
+		mem_size:           mem_size,
+		stack_size:         stack_size,
+		forwarding_enabled: forwarding,
+		bp_enabled:         branch_prediction,
 	}, nil
 }
 
@@ -74,6 +74,11 @@ type Vm struct {
 
 	registers [32]Register
 	memory    []byte
+
+	// Memory and register diff arrays holding the updated addr/idx for memory cells and registers for the last cycle.
+	// This is useful when we only want to know which memory cells and registers are changed in a cycle.
+	Memory_diff_addr  []uint32
+	Register_diff_idx []uint8
 
 	_fd_buff [2]Pipeline_Buffer
 	_dx_buff [2]Pipeline_Buffer
@@ -97,7 +102,7 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 		memory:  make([]byte, config.mem_size),
 		Dm:      CreateDiagnosticsManager(),
 		Bp:      create_predictor(2),
-		Config: config,
+		Config:  config,
 	}
 
 	// TODO: Is this good?
@@ -128,7 +133,7 @@ func (v *Vm) LoadProgramFromFile(fileName string) error {
 	return err
 }
 
-func (v *Vm) LoadProgramFromStr(programStr string) error{
+func (v *Vm) LoadProgramFromStr(programStr string) error {
 	r := strings.NewReader(programStr)
 	program, pc, err := ParseProgramFromReader(r)
 	v.SetProgram(program, pc)
@@ -322,6 +327,7 @@ func (v *Vm) run_decode() {
 
 		// Set the destination register as busy
 		v.registers[inst.Rd].Busy++
+		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	case Fmt_I:
 		// In load, immediate is placed in a different position so we check it explicitly.
 		if inst.Op == Inst_Load {
@@ -334,6 +340,7 @@ func (v *Vm) run_decode() {
 
 		// Set the destination register as busy
 		v.registers[inst.Rd].Busy++
+		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	case Fmt_S: // sw s1 imm(s2) = mem[rf(s2) + imm] <- s1
 		inst._s1 = v.registers[inst.Rd].Data
 		inst._imm = inst.Rs1
@@ -345,9 +352,11 @@ func (v *Vm) run_decode() {
 	case Fmt_U:
 		inst._imm = inst.Rs1
 		v.registers[inst.Rd].Busy++
+		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	case Fmt_J:
 		inst._imm = inst.Rs1
 		v.registers[inst.Rd].Busy++
+		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	}
 
 	v._dx_buff[0].inst = inst
@@ -548,6 +557,8 @@ func (v *Vm) run_memory() {
 		v.memory[addr+1] = byte(u >> 8)
 		v.memory[addr+2] = byte(u >> 16)
 		v.memory[addr+3] = byte(u >> 24)
+
+		v.Memory_diff_addr = append(v.Memory_diff_addr, uint32(addr))
 	case Inst_Load: // Load word
 		addr := inst._result
 		u := uint32(v.memory[addr+0]) |
@@ -586,6 +597,7 @@ func (v *Vm) run_writeback() {
 		}
 
 		v.registers[inst.Rd].Data = inst._result
+		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	}
 
 }
@@ -606,6 +618,10 @@ func (v *Vm) ExecuteCycle() {
 	v.Dm.n_cycle++
 
 	v.cycle_info = Cycle_Info{}
+
+	// Clear the memory and register diff
+	v.Memory_diff_addr = v.Memory_diff_addr[:0]
+	v.Register_diff_idx = v.Register_diff_idx[:0]
 
 	if v._mw_buff[1].valid && !v._halt {
 		v.run_writeback()
