@@ -160,6 +160,7 @@ var opcodeToStringMap = map[Inst_Op]string{
 
 var stringToOpcodeMap map[string]Inst_Op = nil
 
+// Returns the corresponding 'Inst_Op' for the given string, uses the stringToOpcode lookup table.
 func stringToOpcode(s string) Inst_Op {
 	// if stringToOpcodeMap is not created, create it
 	if stringToOpcodeMap == nil {
@@ -176,6 +177,7 @@ func stringToOpcode(s string) Inst_Op {
 
 	return val
 }
+
 
 type Token struct {
 	Pos int

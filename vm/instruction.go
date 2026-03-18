@@ -1,6 +1,9 @@
 package vm
 
-import "log"
+import (
+	"log"
+	"sort"
+)
 
 type Instruction struct {
 	Op  Inst_Op
@@ -80,3 +83,11 @@ func getAluInputRegisters(inst Instruction) (int32, int32) {
 	}
 }
 
+func GetInstructionStringList() []string {
+	insts := make([]string, 0, len(opcodeToStringMap))
+	for _, str := range opcodeToStringMap {
+		insts = append(insts, str)
+	}
+	sort.Strings(insts)
+	return insts
+}

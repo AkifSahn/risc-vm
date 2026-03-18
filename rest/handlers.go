@@ -15,8 +15,12 @@ func SetupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/session/{id}/update_config", withSessionMiddleware(updateConfigHandler))
 	mux.HandleFunc("POST /api/session/{id}/step", withSessionMiddleware(stepProgramHandler))
 
+	mux.HandleFunc("GET /api/instructions", getInstructionList)
+
 	return mux
 }
+
+// --------- Session Handlers ---------
 
 // POST /api/session/new
 //
@@ -60,20 +64,19 @@ func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm)
 func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
 	session.ExecuteCycle()
 
-	response := VmStateResponse{
-		Pc:        session.Pc-1,
-		Cycle:     int(session.Dm.N_cycle),
-		Registers: map[uint8]int32{},
-		Memory:    map[uint32][]byte{},
-		Stages:    session.Dm.Cycle_infos[len(session.Dm.Cycle_infos)-1].Stage_pcs,
-	}
+	response := session.GetState()
 
-	for _, addr := range session.Memory_diff_addr {
-		response.Memory[addr] = session.Memory[addr : addr+4]
-	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
 
-	for _, reg := range session.Register_diff_idx {
-		response.Registers[reg] = session.Registers[reg].Data
+// --------- Instruction Handlers ---------
+
+func getInstructionList(w http.ResponseWriter, r *http.Request) {
+	insts := vm.GetInstructionStringList()
+
+	response := ListInstructionsResponse{
+		Instructions: insts,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

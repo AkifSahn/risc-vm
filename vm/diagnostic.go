@@ -21,10 +21,10 @@ const (
 )
 
 type Cycle_Info struct {
-	Stage_pcs        [5]uint32
-	Stalled          bool
-	S1_bypass_status bypass_type
-	S2_bypass_status bypass_type
+	Stage_pcs        [5]uint32   `json:"stages"`
+	Stalled          bool        `json:"stalled"`
+	S1_bypass_status bypass_type `json:"s1_bypass"`
+	S2_bypass_status bypass_type `json:"s2_bypass"`
 }
 
 type Diagnostics_Manager struct {
@@ -158,4 +158,35 @@ func (v *Vm) DumpStack(format Dump_Format) {
 	v.DumpMemory(s_start, s_end, format)
 
 	fmt.Println("------------")
+}
+
+type Vm_State struct {
+	Pc        int               `json:"pc"`
+	Cycle     int               `json:"cycle"`
+	Registers map[uint8]int32   `json:"registers"`
+	Memory    map[uint32][]byte `json:"memory"`
+	CycleInfo Cycle_Info        `json:"cycle_info"`
+	Halt      bool              `json:"halt"`
+}
+
+func (v *Vm) GetState() Vm_State {
+
+	state := Vm_State{
+		Pc:        int(v.Pc),
+		Cycle:     int(v.Dm.N_cycle),
+		Registers: map[uint8]int32{},
+		Memory:    map[uint32][]byte{},
+		CycleInfo: v.Dm.Cycle_infos[len(v.Dm.Cycle_infos)-1],
+		Halt:      v._halt,
+	}
+
+	for _, addr := range v.Memory_diff_addr {
+		state.Memory[addr] = v.Memory[addr : addr+4]
+	}
+
+	for _, reg := range v.Register_diff_idx {
+		state.Registers[reg] = v.Registers[reg].Data
+	}
+
+	return state
 }

@@ -18,3 +18,7 @@ type NewSessionResponse struct {
 type ProgramResponse struct {
 	Program []vm.Instruction `json:"program"`
 }
+
+type ListInstructionsResponse struct {
+	Instructions []string `json:"instructions"`
+}
