@@ -8,6 +8,12 @@ import (
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
+func ListenAndServe(addr string) {
+	mux := SetupRoutes()
+
+	http.ListenAndServe(addr, corsMiddleware(mux))
+}
+
 func SetupRoutes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/session/new", newSessionHandler)

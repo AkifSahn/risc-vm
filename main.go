@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 
 	"github.com/AkifSahn/risc-vm/rest"
@@ -21,20 +20,17 @@ func main() {
 
 	flag.Parse()
 
-	if *serve{
-		mux := rest.SetupRoutes()
-
+	if *serve {
 		host := "127.0.0.1"
 
 		fmt.Printf("Server started at %s:%s\n", host, *port)
-		http.ListenAndServe(fmt.Sprintf("%s:%s", host, *port), mux)
-	}else if *filename == ""{
+		rest.ListenAndServe(fmt.Sprintf("%s:%s", host, *port))
+	} else if *filename == "" {
 		fmt.Println("Please provide a filename to simulate!")
 		fmt.Println()
 		flag.Usage()
 		return
 	}
-
 
 	config, err := vm.CreateConfig(MEM_SIZE, STACK_SIZE, true, true)
 	if err != nil {
@@ -50,7 +46,7 @@ func main() {
 
 	err = machine.LoadProgramFromFile(*filename)
 	if err != nil {
-		log.Printf("Failed to load program from '%s': %s", filename, err.Error())
+		log.Printf("Failed to load program from '%s': %s", *filename, err.Error())
 		os.Exit(1)
 	}
 
