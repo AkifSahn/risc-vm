@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -121,82 +120,61 @@ var abiToRegNum = map[string]int{
 	"t5": 30, "t6": 31,
 }
 
+var opcodeToStringMap = map[Inst_Op]string{
+	Inst_Add:   "add",
+	Inst_Sub:   "sub",
+	Inst_Mul:   "mul",
+	Inst_Div:   "div",
+	Inst_Rem:   "rem",
+	Inst_Xor:   "xor",
+	Inst_Or:    "or",
+	Inst_And:   "and",
+	Inst_Addi:  "addi",
+	Inst_Subi:  "subi",
+	Inst_Xori:  "xori",
+	Inst_Ori:   "ori",
+	Inst_Andi:  "andi",
+	Inst_Jalr:  "jalr",
+	Inst_Load:  "lw",
+	Inst_Slli:  "slli",
+	Inst_Store: "sw",
+	Inst_Beq:   "beq",
+	Inst_Bne:   "bne",
+	Inst_Blt:   "blt",
+	Inst_Bge:   "bge",
+	Inst_Jal:   "jal",
+	Inst_Lui:   "lui",
+	Inst_Auipc: "auipc",
+	Inst_Mv:    "mv",
+	Inst_Not:   "not",
+	Inst_Neg:   "neg",
+	Inst_Li:    "li",
+	Inst_Jr:    "jr",
+	Inst_Ret:   "ret",
+	Inst_Ble:   "ble",
+	Inst_Bgt:   "bgt",
+	Inst_J:     "j",
+	Inst_Call:  "call",
+	Inst_End:   "end",
+}
+
+var stringToOpcodeMap map[string]Inst_Op = nil
+
 func stringToOpcode(s string) Inst_Op {
-	switch s {
-	case "add":
-		return Inst_Add
-	case "sub":
-		return Inst_Sub
-	case "mul":
-		return Inst_Mul
-	case "div":
-		return Inst_Div
-	case "rem":
-		return Inst_Rem
-	case "xor":
-		return Inst_Xor
-	case "or":
-		return Inst_Or
-	case "and":
-		return Inst_And
-	case "addi":
-		return Inst_Addi
-	case "subi":
-		return Inst_Subi
-	case "xori":
-		return Inst_Xori
-	case "ori":
-		return Inst_Ori
-	case "andi":
-		return Inst_Andi
-	case "jalr":
-		return Inst_Jalr
-	case "lw":
-		return Inst_Load
-	case "slli":
-		return Inst_Slli
-	case "sw":
-		return Inst_Store
-	case "beq":
-		return Inst_Beq
-	case "bne":
-		return Inst_Bne
-	case "blt":
-		return Inst_Blt
-	case "bge":
-		return Inst_Bge
-	case "jal":
-		return Inst_Jal
-	case "lui":
-		return Inst_Lui
-	case "auipc":
-		return Inst_Auipc
-	case "mv":
-		return Inst_Mv
-	case "not":
-		return Inst_Not
-	case "neg":
-		return Inst_Neg
-	case "li":
-		return Inst_Li
-	case "jr":
-		return Inst_Jr
-	case "ret":
-		return Inst_Ret
-	case "ble":
-		return Inst_Ble
-	case "bgt":
-		return Inst_Bgt
-	case "j":
-		return Inst_J
-	case "call":
-		return Inst_Call
-	case "end":
-		return Inst_End
-	default:
-		log.Printf("Unknown opcode '%s'\n", s)
+	// if stringToOpcodeMap is not created, create it
+	if stringToOpcodeMap == nil {
+		stringToOpcodeMap = make(map[string]Inst_Op)
+		for op, str := range opcodeToStringMap {
+			stringToOpcodeMap[str] = op
+		}
+	}
+
+	val, ok := stringToOpcodeMap[s]
+	if !ok {
 		return _Inst_Unknown
 	}
+
+	return val
 }
 
 type Token struct {
@@ -342,7 +320,7 @@ func fillInstToken(inst *Instruction, tok Token) error {
 	switch tok.Pos {
 	case 0:
 		inst.Op = stringToOpcode(tok.Val)
-		if inst.Op == _Inst_Unknown{
+		if inst.Op == _Inst_Unknown {
 			return fmt.Errorf("Unknown opcode: '%s'\n", tok.Val)
 		}
 	case 1:
