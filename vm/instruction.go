@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"fmt"
 	"log"
 	"sort"
 )
@@ -25,6 +26,28 @@ func newInstruction(Op Inst_Op, Rd int32, Rs1 int32, Rs2 int32) Instruction {
 		Rd:  Rd,
 		Rs1: Rs1,
 		Rs2: Rs2,
+	}
+}
+
+func (inst Instruction) Str() string {
+	op := opcodeToStringMap[inst.Op]
+
+	format := getInstructionFmt(inst)
+	switch format {
+	case Fmt_R: // Reg, reg, reg
+		return fmt.Sprintf("%s x%d, x%d, x%d", op, inst.Rd, inst.Rs1, inst.Rs2)
+	case Fmt_I: // reg, reg, imm
+		return fmt.Sprintf("%s x%d, x%d, %d", op, inst.Rd, inst.Rs1, inst.Rs2)
+	case Fmt_S: // reg, imm(reg)
+		return fmt.Sprintf("%s x%d, %d(x%d)", op, inst.Rd, inst.Rs1, inst.Rs2)
+	case Fmt_B: // reg, reg, imm
+		return fmt.Sprintf("%s x%d, x%d, %d", op, inst.Rd, inst.Rs1, inst.Rs2)
+	case Fmt_U: // reg, imm
+		return fmt.Sprintf("%s x%d, %d", op, inst.Rd, inst.Rs1)
+	case Fmt_J: // reg, imm(for branching)
+		return fmt.Sprintf("%s x%d, %d", op, inst.Rd, inst.Rs1)
+	default:
+		panic(fmt.Sprintf("unexpected vm.Inst_Fmt: %#v", format))
 	}
 }
 
