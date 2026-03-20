@@ -16,6 +16,8 @@ func ListenAndServe(addr string) {
 
 func SetupRoutes() *http.ServeMux {
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /api/session/{id}", getSessionHandler)
 	mux.HandleFunc("POST /api/session/new", newSessionHandler)
 	mux.HandleFunc("POST /api/session/{id}/load_program", withSessionMiddleware(loadProgramHandler))
 	mux.HandleFunc("POST /api/session/{id}/update_config", withSessionMiddleware(updateConfigHandler))
@@ -38,9 +40,27 @@ func newSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := NewSessionResponse{Id: id}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	data := NewSessionResponse{Id: id}
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
+}
+
+// GET /api/session
+//
+// Checks if session exists
+func getSessionHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	_, ok := sessions[id]
+	if !ok {
+		http.Error(w, fmt.Sprintf("Session not found! 'id=%s'", id), http.StatusNotFound)
+		return
+	}
+
+	// TODO: we should return the state of the state and maybe the program?? Maybe?
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // POST /api/session/{id}/load_program
@@ -57,7 +77,7 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
@@ -70,10 +90,8 @@ func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm)
 func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
 	session.ExecuteCycle()
 
-	response := session.GetState()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	data := session.GetState()
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
 }
 
 // --------- Instruction Handlers ---------
@@ -81,10 +99,6 @@ func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 func getInstructionList(w http.ResponseWriter, r *http.Request) {
 	insts := vm.GetInstructionStringList()
 
-	response := ListInstructionsResponse{
-		Instructions: insts,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	data := ListInstructionsResponse{Instructions: insts}
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
 }
