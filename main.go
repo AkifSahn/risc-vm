@@ -10,8 +10,8 @@ import (
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
-const MEM_SIZE = 400
-const STACK_SIZE = 200
+const MEM_SIZE = 65536 // 64KB
+const STACK_SIZE = 200 // We don't really need this
 
 func main() {
 	serve := flag.Bool("serve", false, "start the REST API server")
