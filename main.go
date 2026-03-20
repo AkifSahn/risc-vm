@@ -18,6 +18,8 @@ func main() {
 	port := flag.String("port", "8080", "server port")
 	filename := flag.String("file", "", "assembly file to run")
 
+	list_cycles := flag.Bool("list-cycles", false, "List cycle-by-cycle stages")
+
 	flag.Parse()
 
 	if *serve {
@@ -51,23 +53,25 @@ func main() {
 	}
 
 	machine.RunPipelined()
+
+	if *list_cycles{
+		fmt.Printf("i\tF\tD\tX\tM\tW\n")
+		for i, info := range machine.Dm.Cycle_infos {
+			fmt.Printf("%d:", i)
+
+			for _, p := range info.Stage_pcs {
+				if p == 0 {
+					fmt.Printf("\t*")
+					continue
+				}
+				fmt.Printf("\t%d", p)
+			}
+
+			fmt.Println()
+		}
+	}
+
 	machine.DumpRegisters(vm.DUMP_DEC)
 	machine.DumpStack(vm.DUMP_DEC)
 	machine.Dm.PrintDiagnostics()
-
-	// fmt.Println()
-	// fmt.Printf("i\tF\tD\tX\tM\tW\n")
-	// for i, info := range machine.Dm.Cycle_infos {
-	// 	fmt.Printf("%d:", i)
-
-	// 	for _, p := range info.Stage_pcs {
-	// 		if p == 0 {
-	// 			fmt.Printf("\t*")
-	// 			continue
-	// 		}
-	// 		fmt.Printf("\t%d", p)
-	// 	}
-
-	// 	fmt.Println()
-	// }
 }

@@ -543,10 +543,6 @@ func (v *Vm) run_memory() {
 	// Update the cycle info
 	v.cycle_info.Stage_pcs[3] = uint32(pc) - 1
 
-	if inst._fmt == Fmt_B {
-		return
-	}
-
 	// Memory layout is little-endian
 	// b3 b2 b1 b0
 	switch inst.Op {
