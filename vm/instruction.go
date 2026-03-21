@@ -52,7 +52,7 @@ func (inst Instruction) Str() string {
 }
 
 // @Redundant: mostly same as getAluInputRegisters, find a way to remove one of the one of the functions
-func getSourceRegisters(inst Instruction) (int32, int32) {
+func (inst Instruction) getSourceRegisters() (int32, int32) {
 	switch inst._fmt {
 	case Fmt_R:
 		return inst.Rs1, inst.Rs2
@@ -79,7 +79,7 @@ func getSourceRegisters(inst Instruction) (int32, int32) {
 	}
 }
 
-func getAluInputRegisters(inst Instruction) (int32, int32) {
+func (inst Instruction) getAluInputRegisters() (int32, int32) {
 	switch inst._fmt {
 	case Fmt_R:
 		return inst.Rs1, inst.Rs2

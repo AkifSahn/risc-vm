@@ -233,7 +233,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 		return true
 	}
 
-	rs1, rs2 := getSourceRegisters(inst)
+	rs1, rs2 := inst.getSourceRegisters()
 	if rs1 > 0 {
 		if v.Registers[rs1].Busy > 0 {
 			// FIX: Checking the inst.Op == Inst_Store is not a good approach
@@ -389,7 +389,7 @@ func (v *Vm) run_execute() {
 		var ok bool
 		var t bypass_type
 
-		rs1, rs2 := getAluInputRegisters(inst)
+		rs1, rs2 := inst.getAluInputRegisters()
 
 		s1, t, ok = getRegValueFromBypass(v, rs1)
 		if !ok {
