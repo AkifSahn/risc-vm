@@ -77,7 +77,14 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	prog_str := session.GetProgramStr()
+	data := struct {
+		Program []string `json:"program"`
+	}{
+		Program: prog_str[1:],
+	}
+
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
 }
 
 func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
