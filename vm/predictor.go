@@ -29,6 +29,10 @@ func create_predictor(n_bit uint8) Branch_Predictor {
 	}
 }
 
+func (bp *Branch_Predictor) Reset(){
+	bp.PredictionBuffer = [BP_BUFFER_SIZE]Bp_Entry{}
+}
+
 // Returns the prediction and target_pc for a branch in given addr.
 // true means Taken, false means Not Taken
 func (bp *Branch_Predictor) predict(pc uint32) (prediction bool, target uint32) {

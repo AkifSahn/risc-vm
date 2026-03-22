@@ -46,6 +46,10 @@ func CreateDiagnosticsManager() Diagnostics_Manager {
 	return Diagnostics_Manager{}
 }
 
+func (dm *Diagnostics_Manager) Reset(){
+	*dm = Diagnostics_Manager{}
+}
+
 func (dm *Diagnostics_Manager) CalculateCpi() float32 {
 	if dm.N_cycle <= 0 && dm.N_executed_inst <= 0 {
 		return -1

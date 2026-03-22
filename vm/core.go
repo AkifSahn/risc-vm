@@ -124,6 +124,36 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 	return &vm, nil
 }
 
+func (v *Vm) Reset(){
+	// I don't know if this is a good way to reset the vm.
+	// We'll see...
+
+	v.Dm.Reset()
+	v.Bp.Reset()
+	v.cycle_info = Cycle_Info{}
+
+	v.Dm.Forwarding_enabled = v.Config.forwarding_enabled
+	v.Dm.Bp_enabled = v.Config.bp_enabled
+
+	v.Pc = 0
+	v.program = v.program[:0]
+	v.Registers = [32]Register{}
+
+	// Clear the memory and registers
+	v.Memory_diff_addr = v.Memory_diff_addr[:0]
+	v.Register_diff_idx = v.Register_diff_idx[:0]
+
+	// Reset the sp
+	v.Registers[abiToRegNum["sp"]].Data = int32(v.Config.mem_size)
+
+	v._stall_map = 0
+	v._halt = false
+
+	// Shifting twice totally empties the both read and write buffers
+	v.shiftPipelineBuffers()
+	v.shiftPipelineBuffers()
+}
+
 // Returns an error if a parsing error occurs
 func (v *Vm) LoadProgramFromFile(fileName string) error {
 	// Parse the file etc...
