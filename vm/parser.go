@@ -242,13 +242,13 @@ func expandPseudoInstruction(ps Instruction) Instruction {
 }
 
 // Symbol table holding label_str -> line_num
-type Symbol_Table map[string]int
+type Symbol_Table map[string]uint
 
 var symbol_table Symbol_Table
 
-var insts_missing_label map[int]string
+var insts_missing_label map[uint]string
 
-var line_num int
+var line_num uint
 
 func parseRegisterValue(s string) int32 {
 	// Register
@@ -339,19 +339,19 @@ func fillInstToken(inst *Instruction, tok Token) error {
 }
 
 // Returns list of instructions parsed, the default pc and an error.
-func ParseProgramFromFile(filename string) ([]Instruction, int, error) {
+func ParseProgramFromFile(filename string) ([]Instruction, uint, error) {
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0)
 	if err != nil {
-		return nil, -1, err
+		return nil, 0, err
 	}
 	defer file.Close()
 
 	return ParseProgramFromReader(file)
 }
 
-func ParseProgramFromReader(r io.Reader) ([]Instruction, int, error) {
+func ParseProgramFromReader(r io.Reader) ([]Instruction, uint, error) {
 	symbol_table = make(Symbol_Table)
-	insts_missing_label = make(map[int]string, 0)
+	insts_missing_label = make(map[uint]string, 0)
 
 	program := make([]Instruction, 0)
 
@@ -382,7 +382,7 @@ func ParseProgramFromReader(r io.Reader) ([]Instruction, int, error) {
 		for _, tok := range tokens {
 			err := fillInstToken(&inst, tok)
 			if err != nil {
-				return nil, -1, err
+				return nil, 0, err
 			}
 		}
 
@@ -403,7 +403,7 @@ func ParseProgramFromReader(r io.Reader) ([]Instruction, int, error) {
 
 		target, ok := symbol_table[l]
 		if !ok {
-			return nil, -1, fmt.Errorf("Undeclared label or illegal label use: '%s'\n", l)
+			return nil, 0, fmt.Errorf("Undeclared label or illegal label use: '%s'\n", l)
 		}
 
 		offset := target - i
@@ -415,12 +415,12 @@ func ParseProgramFromReader(r io.Reader) ([]Instruction, int, error) {
 		case Fmt_J:
 			inst.Rs1 = int32(offset)
 		default:
-			return nil, -1, fmt.Errorf("Illegal label use or unknown key: '%s'\n", l)
+			return nil, 0, fmt.Errorf("Illegal label use or unknown key: '%s'\n", l)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, -1, err
+		return nil, 0, err
 	}
 
 	// If there is no 'main' lable start from the first instruction

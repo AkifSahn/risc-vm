@@ -1,7 +1,7 @@
 package vm
 
 type Vm_State struct {
-	Pc        int               `json:"pc"`
+	Pc        uint32            `json:"pc"`
 	Cycle     int               `json:"cycle"`
 	Registers map[uint8]int32   `json:"registers"`
 	Memory    map[uint32][]byte `json:"memory"`
@@ -12,7 +12,7 @@ type Vm_State struct {
 func (v *Vm) GetState() Vm_State {
 
 	state := Vm_State{
-		Pc:        int(v.Pc),
+		Pc:        v.Pc,
 		Cycle:     int(v.Dm.N_cycle),
 		Registers: map[uint8]int32{},
 		Memory:    map[uint32][]byte{},

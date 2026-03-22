@@ -122,7 +122,7 @@ func (v *Vm) DumpRegisters(format Dump_Format) {
 	fmt.Println("------------")
 }
 
-func (v *Vm) DumpMemory(start, end int, format Dump_Format) {
+func (v *Vm) DumpMemory(start, end uint32, format Dump_Format) {
 	var val int32
 
 	for i := start; i < end; i += 4 {

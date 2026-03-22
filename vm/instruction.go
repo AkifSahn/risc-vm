@@ -106,6 +106,16 @@ func (inst Instruction) getAluInputRegisters() (int32, int32) {
 	}
 }
 
+
+func (inst Instruction) isControlInstruction() bool {
+	if inst._fmt == Fmt_B || inst._fmt == Fmt_J || inst.Op == Inst_Jalr {
+		return true
+	}
+
+	return false
+}
+
+
 func GetInstructionStringList() []string {
 	insts := make([]string, 0, len(opcodeToStringMap))
 	for _, str := range opcodeToStringMap {

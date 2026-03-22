@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	mu sync.Mutex
+	mu       sync.Mutex
 	sessions = map[string]*vm.Vm{}
 )
 
@@ -19,7 +19,9 @@ func newSession() (string, error) {
 	// Generate a session id
 	id := generateId()
 
-	config, err := vm.CreateConfig(1024, 128, true, true)
+	// TODO: these are hardcoded for now.
+	// 	     We need to take this values from the client.
+	config, err := vm.CreateConfig(1024, 128, 2, true, true)
 	if err != nil {
 		return "", err
 	}

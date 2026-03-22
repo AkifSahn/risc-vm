@@ -23,23 +23,20 @@ type Register struct {
 }
 
 type Pipeline_Buffer struct {
-	pc    int32
+	pc    uint32
 	inst  Instruction
 	valid bool
 }
 
 type Vm_Config struct {
-	mem_size           int // In bytes
-	stack_size         int // In bytes
+	mem_size           uint32 // In bytes
+	stack_size         uint32 // In bytes
+	bp_nbit            uint8  // Branch predictor bit size
 	forwarding_enabled bool
 	bp_enabled         bool
 }
 
-func CreateConfig(mem_size, stack_size int, forwarding, branch_prediction bool) (*Vm_Config, error) {
-	if mem_size <= 0 || stack_size <= 0 {
-		return nil, fmt.Errorf("Memory/stack size must be non-zero!")
-	}
-
+func CreateConfig(mem_size, stack_size uint32, bp_nbit uint8, forwarding, branch_prediction bool) (*Vm_Config, error) {
 	if mem_size%WORD_SIZE != 0 {
 		return nil, fmt.Errorf("Invalid memory size '%d', Memory size must be a multiple of word size(%d).\n",
 			mem_size, WORD_SIZE)
@@ -58,6 +55,7 @@ func CreateConfig(mem_size, stack_size int, forwarding, branch_prediction bool) 
 	return &Vm_Config{
 		mem_size:           mem_size,
 		stack_size:         stack_size,
+		bp_nbit:            bp_nbit,
 		forwarding_enabled: forwarding,
 		bp_enabled:         branch_prediction,
 	}, nil
@@ -69,7 +67,7 @@ type Vm struct {
 	Bp         Branch_Predictor
 	cycle_info Cycle_Info
 
-	Pc      int32
+	Pc      uint32
 	program []Instruction
 
 	Registers [32]Register
@@ -96,12 +94,11 @@ type Vm struct {
 }
 
 func CreateVm(config Vm_Config) (*Vm, error) {
-
 	vm := Vm{
 		program: make([]Instruction, 0),
 		Memory:  make([]byte, config.mem_size),
 		Dm:      CreateDiagnosticsManager(),
-		Bp:      create_predictor(2),
+		Bp:      create_predictor(config.bp_nbit),
 		Config:  config,
 	}
 
@@ -124,7 +121,7 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 	return &vm, nil
 }
 
-func (v *Vm) Reset(){
+func (v *Vm) Reset() {
 	// I don't know if this is a good way to reset the vm.
 	// We'll see...
 
@@ -158,7 +155,7 @@ func (v *Vm) Reset(){
 func (v *Vm) LoadProgramFromFile(fileName string) error {
 	// Parse the file etc...
 	program, pc, err := ParseProgramFromFile(fileName)
-	v.SetProgram(program, pc)
+	v.SetProgram(program, uint32(pc))
 
 	return err
 }
@@ -166,13 +163,13 @@ func (v *Vm) LoadProgramFromFile(fileName string) error {
 func (v *Vm) LoadProgramFromStr(programStr string) error {
 	r := strings.NewReader(programStr)
 	program, pc, err := ParseProgramFromReader(r)
-	v.SetProgram(program, pc)
+	v.SetProgram(program, uint32(pc))
 
 	return err
 }
 
-func (v *Vm) SetProgram(program []Instruction, pc int) {
-	v.Pc = int32(pc)
+func (v *Vm) SetProgram(program []Instruction, pc uint32) {
+	v.Pc = pc
 	v.program = program
 
 	// Reset the Diagnostics_Manager
@@ -183,18 +180,18 @@ func (v *Vm) SetProgram(program []Instruction, pc int) {
 }
 
 // This function checks if a register at decode stage can be forwarded later on.
-func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
+func (v *Vm) checkRegisterForwardDecode(reg int32) bool {
 	if reg <= 0 {
 		return true
 	}
 
 	// If forwarding is not enabled, well we can't forward
-	if !vm.Config.forwarding_enabled {
+	if !v.Config.forwarding_enabled {
 		return false
 	}
 
-	half_inst := vm._dx_buff[1].inst
-	full_inst := vm._xm_buff[1].inst // Enabled if and only if can't forward from inst_s1
+	half_inst := v._dx_buff[1].inst
+	full_inst := v._xm_buff[1].inst // Enabled if and only if can't forward from inst_s1
 
 	// Check if bypass source instructions actually write to a register
 	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
@@ -216,17 +213,17 @@ func checkRegisterForwardDecode(vm *Vm, reg int32) bool {
 
 // Gets the given register value from bypass.
 // If register number don't match, returns (-1, false).
-func getRegValueFromBypass(vm *Vm, reg int32) (int32, bypass_type, bool) {
+func (v *Vm) getRegValueFromBypass(reg int32) (int32, bypass_type, bool) {
 	if reg <= 0 {
 		return -1, 0, false
 	}
 
-	if !vm.Config.forwarding_enabled {
+	if !v.Config.forwarding_enabled {
 		return -1, 0, false
 	}
 
-	half_inst := vm._xm_buff[1].inst
-	full_inst := vm._mw_buff[1].inst // Enabled only if we can't forward from inst_s1
+	half_inst := v._xm_buff[1].inst
+	full_inst := v._mw_buff[1].inst // Enabled only if we can't forward from inst_s1
 
 	// Check if bypass source instructions actually write to a register
 	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
@@ -246,14 +243,6 @@ func getRegValueFromBypass(vm *Vm, reg int32) (int32, bypass_type, bool) {
 	return -1, 0, false
 }
 
-func (v *Vm) isControlInstruction(inst Instruction) bool {
-	if inst._fmt == Fmt_B || inst._fmt == Fmt_J || inst.Op == Inst_Jalr {
-		return true
-	}
-
-	return false
-}
-
 // This function checks if we should stall in the decode stage or not based on the instruction.
 //
 // Checks for RAW(Read After Write) Data Hazard.
@@ -268,7 +257,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 		if v.Registers[rs1].Busy > 0 {
 			// FIX: Checking the inst.Op == Inst_Store is not a good approach
 			// We need this check because the first source is not an ALU input and can't be forwarded
-			if inst.Op == Inst_Store || !checkRegisterForwardDecode(v, rs1) {
+			if inst.Op == Inst_Store || !v.checkRegisterForwardDecode(rs1) {
 				return true
 			}
 		}
@@ -276,7 +265,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 	if rs2 > 0 {
 		if v.Registers[rs2].Busy > 0 {
-			if !checkRegisterForwardDecode(v, rs2) {
+			if !v.checkRegisterForwardDecode(rs2) {
 				return true
 			}
 		}
@@ -292,10 +281,6 @@ func (v *Vm) flush() {
 }
 
 func (v *Vm) run_fetch() {
-	if v.Pc < 0 {
-		log.Fatalf("Incorrect pc value '%d'\n", v.Pc)
-	}
-
 	inst := v.program[v.Pc]
 
 	{
@@ -308,7 +293,7 @@ func (v *Vm) run_fetch() {
 
 	// Update the cyle info
 	{
-		v.cycle_info.Stage_pcs[0] = uint32(v.Pc)
+		v.cycle_info.Stage_pcs[0] = v.Pc
 	}
 
 	v.Pc++
@@ -333,14 +318,14 @@ func (v *Vm) run_decode() {
 	}
 
 	// If this is a branch instruction, stall the fetch until the branch addr is calculated
-	if v.isControlInstruction(inst) {
+	if inst.isControlInstruction() {
 		// If branch prediction is enabled, do prediction.
 		// If not, just stall
 		if v.Config.bp_enabled {
 			taken, target := v.Bp.predict(uint32(pc - 1))
 
 			if taken {
-				v.Pc = int32(target)
+				v.Pc = target
 			}
 		} else {
 			v._stall_map |= STALL_BRANCH
@@ -421,7 +406,7 @@ func (v *Vm) run_execute() {
 
 		rs1, rs2 := inst.getAluInputRegisters()
 
-		s1, t, ok = getRegValueFromBypass(v, rs1)
+		s1, t, ok = v.getRegValueFromBypass(rs1)
 		if !ok {
 			s1 = inst._s1
 		}
@@ -429,7 +414,7 @@ func (v *Vm) run_execute() {
 		// Update cycle info
 		v.cycle_info.S1_bypass_status = t
 
-		s2, t, ok = getRegValueFromBypass(v, rs2)
+		s2, t, ok = v.getRegValueFromBypass(rs2)
 		if !ok {
 			s2 = inst._s2
 		}
@@ -481,7 +466,7 @@ func (v *Vm) run_execute() {
 		inst._result = addr
 
 	case Inst_Jalr:
-		inst._result = pc
+		inst._result = int32(pc)
 		branch_taken = true
 		branch_target = uint32(s1 + inst._imm)
 		// v.pc = s1 + inst._imm
@@ -505,36 +490,36 @@ func (v *Vm) run_execute() {
 		if s1 == s2 {
 			branch_taken = true
 		}
-		branch_target = uint32(pc + inst._imm - 1) // v.pc holds the next instruction hence -1
+		branch_target = uint32(int32(pc)+inst._imm) - 1 // v.pc holds the next instruction hence -1
 	case Inst_Bne:
 		if s1 != s2 {
 			branch_taken = true
 		}
-		branch_target = uint32(pc + inst._imm - 1)
+		branch_target = uint32(int32(pc) + inst._imm - 1)
 	case Inst_Blt:
 		if s1 < s2 {
 			branch_taken = true
 		}
-		branch_target = uint32(pc + inst._imm - 1)
+		branch_target = uint32(int32(pc) + inst._imm - 1)
 	case Inst_Bge:
 		if s1 >= s2 {
 			branch_taken = true
-			branch_target = uint32(pc + inst._imm - 1)
+			branch_target = uint32(int32(pc) + inst._imm - 1)
 		}
 
 	case Inst_Jal: // Jump And Link
-		inst._result = pc
+		inst._result = int32(pc)
 		branch_taken = true
-		branch_target = uint32(pc + inst._imm - 1)
+		branch_target = uint32(int32(pc) + inst._imm - 1)
 
 	case Inst_Lui:
 		inst._result = inst._imm
 	case Inst_Auipc:
-		inst._result = (pc - 1) + inst._imm
+		inst._result = int32(pc) + inst._imm - 1
 	}
 
 	// Branch address is calculated, we can stop stalling.
-	if v.isControlInstruction(inst) {
+	if inst.isControlInstruction() {
 		v.Dm.N_branch++
 
 		correct := false
@@ -553,7 +538,7 @@ func (v *Vm) run_execute() {
 		// If BP is not enabled then the 'correct' will stay as false and pc will be updated.
 		if !correct {
 			if branch_taken {
-				v.Pc = int32(branch_target)
+				v.Pc = branch_target
 			} else {
 				v.Pc = pc
 			}
@@ -665,7 +650,7 @@ func (v *Vm) ExecuteCycle() {
 		v.run_decode()
 	}
 
-	if v.Pc < int32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
+	if v.Pc < uint32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
 
 		v.Dm.N_executed_inst++
@@ -705,23 +690,15 @@ This function does not deal with stall conditions.
 At stall, the READ part must fed back to the WRITE part so that the buffer is not drained.
 */
 func (v *Vm) shiftPipelineBuffers() {
-	{
-		v._fd_buff[1] = v._fd_buff[0]
-		v._fd_buff[0].valid = false
-	}
+	v._fd_buff[1] = v._fd_buff[0]
+	v._fd_buff[0].valid = false
 
-	{
-		v._dx_buff[1] = v._dx_buff[0]
-		v._dx_buff[0].valid = false
-	}
+	v._dx_buff[1] = v._dx_buff[0]
+	v._dx_buff[0].valid = false
 
-	{
-		v._xm_buff[1] = v._xm_buff[0]
-		v._xm_buff[0].valid = false
-	}
+	v._xm_buff[1] = v._xm_buff[0]
+	v._xm_buff[0].valid = false
 
-	{
-		v._mw_buff[1] = v._mw_buff[0]
-		v._mw_buff[0].valid = false
-	}
+	v._mw_buff[1] = v._mw_buff[0]
+	v._mw_buff[0].valid = false
 }

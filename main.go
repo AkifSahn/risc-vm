@@ -34,7 +34,7 @@ func main() {
 		return
 	}
 
-	config, err := vm.CreateConfig(MEM_SIZE, STACK_SIZE, true, true)
+	config, err := vm.CreateConfig(MEM_SIZE, STACK_SIZE, 2, true, true)
 	if err != nil {
 		fmt.Printf("Configuration error: %s", err.Error())
 		os.Exit(1)
