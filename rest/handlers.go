@@ -71,6 +71,7 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 		return
 	}
 
+	session.Reset()
 	err := session.LoadProgramFromStr(req.ProgramStr)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to parse given program: %s", err.Error()), http.StatusBadRequest)
