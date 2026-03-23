@@ -20,8 +20,9 @@ func (v *Vm) GetState() Vm_State {
 		Halt:      v._halt,
 	}
 
+	// TODO: Fix, load byte by byte not word
 	for _, addr := range v.Memory_diff_addr {
-		state.Memory[addr] = v.Memory[addr : addr+4]
+		state.Memory[addr] = v.Memory[addr: addr+4]
 	}
 
 	for _, reg := range v.Register_diff_idx {

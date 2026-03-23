@@ -40,7 +40,9 @@ const (
 	Inst_Addi
 	Inst_Subi
 	Inst_Xori
-	Inst_Load
+	Inst_Lw // Load word
+	Inst_Lh // Load half
+	Inst_Lb // Load byte
 	Inst_Ori
 	Inst_Andi
 	Inst_Jalr // Jump And Link Reg
@@ -48,7 +50,9 @@ const (
 	_Inst_I_end
 
 	_Inst_S_start
-	Inst_Store // store-word
+	Inst_Sw // store word
+	Inst_Sh // store half
+	Inst_Sb // store byte
 	_Inst_S_end
 
 	_Inst_B_start
@@ -135,9 +139,13 @@ var opcodeToStringMap = map[Inst_Op]string{
 	Inst_Ori:   "ori",
 	Inst_Andi:  "andi",
 	Inst_Jalr:  "jalr",
-	Inst_Load:  "lw",
+	Inst_Lw:    "lw",
+	Inst_Lh:    "lh",
+	Inst_Lb:    "lb",
 	Inst_Slli:  "slli",
-	Inst_Store: "sw",
+	Inst_Sw:    "sw",
+	Inst_Sh:    "sh",
+	Inst_Sb:    "sb",
 	Inst_Beq:   "beq",
 	Inst_Bne:   "bne",
 	Inst_Blt:   "blt",
@@ -177,7 +185,6 @@ func stringToOpcode(s string) Inst_Op {
 
 	return val
 }
-
 
 type Token struct {
 	Pos int

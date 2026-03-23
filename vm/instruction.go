@@ -58,7 +58,7 @@ func (inst Instruction) getSourceRegisters() (int32, int32) {
 		return inst.Rs1, inst.Rs2
 
 	case Fmt_I:
-		if inst.Op == Inst_Load {
+		if inst.isLoad() {
 			return inst.Rs2, -1
 		} else {
 			return inst.Rs1, -1
@@ -85,7 +85,7 @@ func (inst Instruction) getAluInputRegisters() (int32, int32) {
 		return inst.Rs1, inst.Rs2
 
 	case Fmt_I:
-		if inst.Op == Inst_Load {
+		if inst.isLoad() {
 			return inst.Rs2, -1
 		} else {
 			return inst.Rs1, -1
@@ -106,7 +106,6 @@ func (inst Instruction) getAluInputRegisters() (int32, int32) {
 	}
 }
 
-
 func (inst Instruction) isControlInstruction() bool {
 	if inst._fmt == Fmt_B || inst._fmt == Fmt_J || inst.Op == Inst_Jalr {
 		return true
@@ -115,6 +114,21 @@ func (inst Instruction) isControlInstruction() bool {
 	return false
 }
 
+func (inst Instruction) isLoad() bool {
+	if inst.Op == Inst_Lw || inst.Op == Inst_Lh || inst.Op == Inst_Lb {
+		return true
+	}
+
+	return false
+}
+
+func (inst Instruction) isStore() bool {
+	if inst.Op == Inst_Sw || inst.Op == Inst_Sh || inst.Op == Inst_Sb {
+		return true
+	}
+
+	return false
+}
 
 func GetInstructionStringList() []string {
 	insts := make([]string, 0, len(opcodeToStringMap))

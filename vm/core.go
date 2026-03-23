@@ -196,14 +196,14 @@ func (v *Vm) checkRegisterForwardDecode(reg int32) bool {
 	// Check if bypass source instructions actually write to a register
 	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
 		// Compare the destination register with given source register
-		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
+		if !half_inst.isLoad() && half_inst.Rd == reg {
 			return true
 		}
 	}
 
 	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
 		// Compare the destination register with
-		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
+		if !full_inst.isLoad() && full_inst.Rd == reg {
 			return true
 		}
 	}
@@ -228,14 +228,14 @@ func (v *Vm) getRegValueFromBypass(reg int32) (int32, bypass_type, bool) {
 	// Check if bypass source instructions actually write to a register
 	if half_inst._fmt == Fmt_R || half_inst._fmt == Fmt_I || half_inst._fmt == Fmt_U || half_inst._fmt == Fmt_J {
 		// Compare the destination register with given source register
-		if half_inst.Op != Inst_Load && half_inst.Rd == reg {
+		if !half_inst.isLoad() && half_inst.Rd == reg {
 			return half_inst._result, BYPASS_XM, true
 		}
 	}
 
 	if full_inst._fmt == Fmt_R || full_inst._fmt == Fmt_I || full_inst._fmt == Fmt_U || full_inst._fmt == Fmt_J {
 		// Compare the destination register with
-		if full_inst.Op != Inst_Load && full_inst.Rd == reg {
+		if !full_inst.isLoad() && full_inst.Rd == reg {
 			return full_inst._result, BYPASS_MW, true
 		}
 	}
@@ -257,7 +257,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 		if v.Registers[rs1].Busy > 0 {
 			// FIX: Checking the inst.Op == Inst_Store is not a good approach
 			// We need this check because the first source is not an ALU input and can't be forwarded
-			if inst.Op == Inst_Store || !v.checkRegisterForwardDecode(rs1) {
+			if inst.isStore() || !v.checkRegisterForwardDecode(rs1) {
 				return true
 			}
 		}
@@ -345,7 +345,7 @@ func (v *Vm) run_decode() {
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	case Fmt_I:
 		// In load, immediate is placed in a different position so we check it explicitly.
-		if inst.Op == Inst_Load {
+		if inst.isLoad() {
 			inst._imm = inst.Rs1
 			inst._s1 = v.Registers[inst.Rs2].Data
 		} else {
@@ -456,13 +456,8 @@ func (v *Vm) run_execute() {
 	case Inst_Andi:
 		inst._result = s1 & inst._imm
 
-	case Inst_Load: // load word
+	case Inst_Lw, Inst_Lh, Inst_Lb: // load
 		addr := s1 + inst._imm
-		if addr%(WORD_SIZE) != 0 {
-			log.Printf("Illegal read attempt from unaligned memory address: '%d'."+
-				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
-			v._halt = true
-		}
 		inst._result = addr
 
 	case Inst_Jalr:
@@ -474,17 +469,9 @@ func (v *Vm) run_execute() {
 	case Inst_Slli: // rd = rs1 << imm[0:4]
 		inst._result = s1 << inst._imm
 
-	case Inst_Store: // Store word
+	case Inst_Sw, Inst_Sh, Inst_Sb: // Store word
 		addr := s2 + inst._imm // In bytes
-
-		// Calculated addr is in bytes and WORD_SIZE is in bytes. So convert WORD_SIZE to bits
-		if addr%(WORD_SIZE) != 0 {
-			log.Printf("ERROR - Illegal write attempt to unaligned memory address: '%d'."+
-				"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
-			v._halt = true
-		}
-
-		inst._result = addr // Each memory cell holds one byte
+		inst._result = addr    // Each memory cell holds one byte
 
 	case Inst_Beq:
 		if s1 == s2 {
@@ -551,6 +538,44 @@ func (v *Vm) run_execute() {
 	v._xm_buff[0].valid = true
 }
 
+// Store n bytes of data at the memory addr.
+// Addr must be aligned by n.
+func (v *Vm) memoryWrite(data int32, addr uint32, n uint8) {
+	if addr%uint32(n) != 0 {
+		log.Printf("ERROR - Illegal write attempt to unaligned memory address: '%v'."+
+			"Each word adress must be aligned by '%v'", addr, n)
+		v._halt = true
+		return
+	}
+
+	u := uint32(data)
+	for i := range uint32(n) {
+		v.Memory[addr+i] = byte(u)
+		u >>= 8
+
+		v.Memory_diff_addr = append(v.Memory_diff_addr, uint32(addr+i))
+	}
+}
+
+// Reads n bytes from memory addr
+// Addr must be aligned by n.
+// Returns the read data.
+func (v *Vm) memoryRead(addr uint32, n uint8) int32 {
+	if addr%uint32(n) != 0 {
+		log.Printf("Illegal read attempt from unaligned memory address: '%d'."+
+			"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
+		v._halt = true
+		return 0
+	}
+
+	var u uint32
+	for i := range uint32(n) {
+		u |= uint32(v.Memory[addr+i]) << (i * 8)
+	}
+
+	return int32(u)
+}
+
 func (v *Vm) run_memory() {
 	inst := v._xm_buff[1].inst
 	pc := v._xm_buff[1].pc
@@ -561,23 +586,38 @@ func (v *Vm) run_memory() {
 	// Memory layout is little-endian
 	// b3 b2 b1 b0
 	switch inst.Op {
-	case Inst_Store: // Store word
-		u := uint32(inst._s1)
-		addr := inst._result
-		v.Memory[addr+0] = byte(u >> 0)
-		v.Memory[addr+1] = byte(u >> 8)
-		v.Memory[addr+2] = byte(u >> 16)
-		v.Memory[addr+3] = byte(u >> 24)
+	case Inst_Sw: // Store word
+		addr := uint32(inst._result)
+		data := inst._s1
+		v.memoryWrite(data, addr, 4)
 
-		v.Memory_diff_addr = append(v.Memory_diff_addr, uint32(addr))
-	case Inst_Load: // Load word
-		addr := inst._result
-		u := uint32(v.Memory[addr+0]) |
-			uint32(v.Memory[addr+1])<<8 |
-			uint32(v.Memory[addr+2])<<16 |
-			uint32(v.Memory[addr+3])<<24
+	case Inst_Sh: // Store half
+		addr := uint32(inst._result)
+		data := inst._s1
+		v.memoryWrite(data, addr, 2)
 
-		inst._result = int32(u)
+	case Inst_Sb: // Store byte
+		addr := uint32(inst._result)
+		data := inst._s1
+		v.memoryWrite(data, addr, 1)
+
+	case Inst_Lw: // Load word
+		addr := uint32(inst._result)
+		data := v.memoryRead(addr, 4)
+
+		inst._result = data
+
+	case Inst_Lh: // Load half
+		addr := uint32(inst._result)
+		data := v.memoryRead(addr, 2)
+
+		inst._result = data
+
+	case Inst_Lb: // Load byte
+		addr := uint32(inst._result)
+		data := v.memoryRead(addr, 1)
+
+		inst._result = data
 	}
 
 	v._mw_buff[0].inst = inst
