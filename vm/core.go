@@ -29,11 +29,11 @@ type Pipeline_Buffer struct {
 }
 
 type Vm_Config struct {
-	mem_size           uint32 // In bytes
-	stack_size         uint32 // In bytes
-	bp_nbit            uint8  // Branch predictor bit size
-	forwarding_enabled bool
-	bp_enabled         bool
+	Mem_size           uint32 // In bytes
+	Stack_size         uint32 // In bytes
+	Bp_nbit            uint8  // Branch predictor bit size
+	Forwarding_enabled bool
+	Bp_enabled         bool
 }
 
 func CreateConfig(mem_size, stack_size uint32, bp_nbit uint8, forwarding, branch_prediction bool) (*Vm_Config, error) {
@@ -53,11 +53,11 @@ func CreateConfig(mem_size, stack_size uint32, bp_nbit uint8, forwarding, branch
 	}
 
 	return &Vm_Config{
-		mem_size:           mem_size,
-		stack_size:         stack_size,
-		bp_nbit:            bp_nbit,
-		forwarding_enabled: forwarding,
-		bp_enabled:         branch_prediction,
+		Mem_size:           mem_size,
+		Stack_size:         stack_size,
+		Bp_nbit:            bp_nbit,
+		Forwarding_enabled: forwarding,
+		Bp_enabled:         branch_prediction,
 	}, nil
 }
 
@@ -96,18 +96,18 @@ type Vm struct {
 func CreateVm(config Vm_Config) (*Vm, error) {
 	vm := Vm{
 		program: make([]Instruction, 0),
-		Memory:  make([]byte, config.mem_size),
+		Memory:  make([]byte, config.Mem_size),
 		Dm:      CreateDiagnosticsManager(),
-		Bp:      create_predictor(config.bp_nbit),
+		Bp:      create_predictor(config.Bp_nbit),
 		Config:  config,
 	}
 
 	// TODO: Is this good?
-	vm.Dm.Forwarding_enabled = config.forwarding_enabled
-	vm.Dm.Bp_enabled = config.bp_enabled
+	vm.Dm.Forwarding_enabled = config.Forwarding_enabled
+	vm.Dm.Bp_enabled = config.Bp_enabled
 
 	// Initialize stack pointer to the MAX_ADDR
-	vm.Registers[abiToRegNum["sp"]].Data = int32(config.mem_size)
+	vm.Registers[abiToRegNum["sp"]].Data = int32(config.Mem_size)
 
 	// Fill the instCycleTable to default values
 	{
@@ -129,8 +129,8 @@ func (v *Vm) Reset() {
 	v.Bp.Reset()
 	v.cycle_info = Cycle_Info{}
 
-	v.Dm.Forwarding_enabled = v.Config.forwarding_enabled
-	v.Dm.Bp_enabled = v.Config.bp_enabled
+	v.Dm.Forwarding_enabled = v.Config.Forwarding_enabled
+	v.Dm.Bp_enabled = v.Config.Bp_enabled
 
 	v.Pc = 0
 	v.program = v.program[:0]
@@ -141,7 +141,7 @@ func (v *Vm) Reset() {
 	v.Register_diff_idx = v.Register_diff_idx[:0]
 
 	// Reset the sp
-	v.Registers[abiToRegNum["sp"]].Data = int32(v.Config.mem_size)
+	v.Registers[abiToRegNum["sp"]].Data = int32(v.Config.Mem_size)
 
 	v._stall_map = 0
 	v._halt = false
@@ -186,7 +186,7 @@ func (v *Vm) checkRegisterForwardDecode(reg int32) bool {
 	}
 
 	// If forwarding is not enabled, well we can't forward
-	if !v.Config.forwarding_enabled {
+	if !v.Config.Forwarding_enabled {
 		return false
 	}
 
@@ -218,7 +218,7 @@ func (v *Vm) getRegValueFromBypass(reg int32) (int32, bypass_type, bool) {
 		return -1, 0, false
 	}
 
-	if !v.Config.forwarding_enabled {
+	if !v.Config.Forwarding_enabled {
 		return -1, 0, false
 	}
 
@@ -321,7 +321,7 @@ func (v *Vm) run_decode() {
 	if inst.isControlInstruction() {
 		// If branch prediction is enabled, do prediction.
 		// If not, just stall
-		if v.Config.bp_enabled {
+		if v.Config.Bp_enabled {
 			taken, target := v.Bp.predict(uint32(pc - 1))
 
 			if taken {
@@ -524,7 +524,7 @@ func (v *Vm) run_execute() {
 
 		correct := false
 		// If prediction is enabled, update the predictor and flush if necessary
-		if v.Config.bp_enabled {
+		if v.Config.Bp_enabled {
 			correct = v.Bp.update(uint32(pc-1), branch_target, branch_taken)
 			if !correct {
 				v.Dm.N_mispred++

@@ -20,7 +20,19 @@ func main() {
 
 	list_cycles := flag.Bool("list-cycles", false, "List cycle-by-cycle stages")
 
+	save_test := flag.Bool("make-test", false, "Save the result of the execution as test data.")
+	run_tests := flag.Bool("run-tests", false, "Run tests for existing saved test data")
+
 	flag.Parse()
+
+
+	if *run_tests{
+		err := vm.TestAllExamples()
+		if err != nil {
+			panic(err.Error())
+		}
+		return 
+	}
 
 	if *serve {
 		host := "127.0.0.1"
@@ -54,7 +66,17 @@ func main() {
 
 	machine.RunPipelined()
 
-	if *list_cycles{
+	if *save_test {
+		err := machine.SaveTestState(*filename)
+		if err != nil {
+			fmt.Printf("Failed to save test state: %s\n", err.Error())
+			os.Exit(1)
+		}
+
+		return
+	}
+
+	if *list_cycles {
 		fmt.Printf("i\tF\tD\tX\tM\tW\n")
 		for i, info := range machine.Dm.Cycle_infos {
 			fmt.Printf("%d:", i)

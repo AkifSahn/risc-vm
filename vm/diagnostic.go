@@ -156,8 +156,8 @@ func (v *Vm) DumpStack(format Dump_Format) {
 	fmt.Println("------------")
 	fmt.Printf("Stack Dump: Sp = %d\n", v.Registers[abiToRegNum["sp"]].Data)
 
-	s_start := v.Config.mem_size - v.Config.stack_size
-	s_end := v.Config.mem_size
+	s_start := v.Config.Mem_size - v.Config.Stack_size
+	s_end := v.Config.Mem_size
 
 	v.DumpMemory(s_start, s_end, format)
 
