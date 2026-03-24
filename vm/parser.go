@@ -1,91 +1,10 @@
 package vm
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
-	"strings"
 	"unicode"
-)
-
-type Inst_Op int
-type Inst_Fmt int
-
-const (
-	Fmt_R Inst_Fmt = iota
-	Fmt_I          // immediate
-	Fmt_S          // store
-	Fmt_B          // branch
-	Fmt_U          // Upper immediate
-	Fmt_J
-)
-
-const (
-	Inst_Nop Inst_Op = iota
-
-	_Inst_R_start
-	Inst_Add
-	Inst_Sub
-	Inst_Mul
-	Inst_Div
-	Inst_Rem
-	Inst_Xor
-	Inst_Or
-	Inst_And
-	_Inst_R_end
-
-	_Inst_I_start
-	Inst_Addi
-	Inst_Subi
-	Inst_Xori
-	Inst_Lw // Load word
-	Inst_Lh // Load half
-	Inst_Lb // Load byte
-	Inst_Ori
-	Inst_Andi
-	Inst_Jalr // Jump And Link Reg
-	Inst_Slli
-	_Inst_I_end
-
-	_Inst_S_start
-	Inst_Sw // store word
-	Inst_Sh // store half
-	Inst_Sb // store byte
-	_Inst_S_end
-
-	_Inst_B_start
-	Inst_Beq
-	Inst_Bne
-	Inst_Blt
-	Inst_Bge
-	_Inst_B_end
-
-	_Inst_J_start
-	Inst_Jal // Jump And Link
-	_Inst_J_end
-
-	_Inst_U_start
-	Inst_Lui
-	Inst_Auipc
-	_Inst_U_end
-
-	_Inst_Pseudo_start
-	Inst_Mv
-	Inst_Not
-	Inst_Neg
-	Inst_Li
-	Inst_Jr
-	Inst_Ret
-	Inst_Ble
-	Inst_Bgt
-	Inst_J
-	Inst_Call
-	_Inst_Pseudo_end
-
-	Inst_End
-	_Inst_Unknown
 )
 
 var abiToRegNum = map[string]int{
@@ -186,235 +105,233 @@ func stringToOpcode(s string) Inst_Op {
 	return val
 }
 
+// ===================================
+// ============== LEXER ==============
+// ===================================
+
+type Token_Type uint16
+
+const (
+	Tok_End Token_Type = iota
+	Tok_Colon
+
+	Tok_Number
+	Tok_Symbol
+	Tok_Invalid
+)
+
 type Token struct {
-	Pos int
-	Val string
+	Type  Token_Type
+	Value string
+
+	// Position of the token in the file
+	line_num uint32
+	start    uint32 // starting point within the line?
+
+	num uint8 // Token number in a line
 }
 
-func getInstructionFmt(inst Instruction) Inst_Fmt {
-	// Determine the instruction type
-	if _Inst_R_start < inst.Op && inst.Op < _Inst_R_end {
-		return Fmt_R
-	} else if _Inst_I_start < inst.Op && inst.Op < _Inst_I_end {
-		return Fmt_I
-	} else if _Inst_S_start < inst.Op && inst.Op < _Inst_S_end {
-		return Fmt_S
-	} else if _Inst_B_start < inst.Op && inst.Op < _Inst_B_end {
-		return Fmt_B
-	} else if _Inst_U_start < inst.Op && inst.Op < _Inst_U_end {
-		return Fmt_U
-	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
-		return Fmt_J
-	}
+type Lexer struct {
+	Content string // The file that we are tokenizing
 
-	return Fmt_R
+	Cursor uint32
+	Line   uint32 // Line number we are at
+	Bol    uint32 // Beginning of line
+
+	tok_num uint8 // Token count in a line
 }
 
-func expandPseudoInstruction(ps Instruction) Instruction {
-	switch ps.Op {
-	case Inst_Mv: //  addi rd, rs, 0 Copy register
-		return newInstruction(Inst_Addi, ps.Rd, ps.Rs1, 0)
-	case Inst_Not: // xori rd, rs, -1 One’s complement
-		return newInstruction(Inst_Xori, ps.Rd, ps.Rs1, -1)
-	case Inst_Neg: // sub rd, x0, rs Two’s complement
-		return newInstruction(Inst_Sub, ps.Rd, 0, ps.Rs1)
-	case Inst_Li: // addi Rd x0 imm(Rs1) Load immediate
-		return newInstruction(Inst_Addi, ps.Rd, 0, ps.Rs1)
-	case Inst_Jr: // jalr x0, rs, 0 Jump register
-		return newInstruction(Inst_Jalr, 0, ps.Rd, 0)
-	case Inst_Ret: // jalr x0, x1, 0 Return from subroutine
-		return newInstruction(Inst_Jalr, 0, 1, 0)
-	case Inst_Ble:
-		return newInstruction(Inst_Bge, ps.Rs1, ps.Rd, ps.Rs2)
-	case Inst_Bgt:
-		return newInstruction(Inst_Blt, ps.Rs1, ps.Rd, ps.Rs2)
-	case Inst_J:
-		return newInstruction(Inst_Jal, 0, ps.Rd, 0)
-
-	/* Based on the risc-v manual, call expands to two instructions:
-	call offset:
-		auipc x1, offset[31:12]
-		jalr x1, x1, offset[11:0]
-
-	And call is used for calling 'far-away' subroutines.
-
-	But in our implementation, we can just expand to 'jal ra offset',
-	since it can handle any length jumps
-	*/
-	case Inst_Call:
-		return newInstruction(Inst_Jal, 1, ps.Rd, 0)
-	default:
-		return ps
-	}
+func isSymbolStart(b byte) bool {
+	ch := rune(b)
+	return unicode.IsLetter(ch) || ch == '.' || ch == '_'
 }
 
-// Symbol table holding label_str -> line_num
-type Symbol_Table map[string]uint
-
-var symbol_table Symbol_Table
-
-var insts_missing_label map[uint]string
-
-var line_num uint
-
-func parseRegisterValue(s string) int32 {
-	// Register
-	if val, ok := abiToRegNum[s]; ok {
-		return int32(val)
-	}
-
-	// Immediate value
-	if val, err := strconv.Atoi(s); err == nil {
-		return int32(val)
-	}
-
-	// Label
-	if val, ok := symbol_table[s]; ok {
-		return int32(val - line_num)
-	}
-
-	// Label is not in the symbol_table yet
-	insts_missing_label[line_num] = s
-
-	return -1
+func isSymbol(b byte) bool {
+	ch := rune(b)
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_'
 }
 
-func tokenizeLine(line string) []Token {
-	var sb strings.Builder
+// TODO: Check if paranthesis are valid
+// We consider parans and ',' as a space
+func (l *Lexer) isSpace(ch rune) bool {
+	return unicode.IsSpace(ch) || ch == '(' || ch == ')' || ch == ',' || ch == ';'
+}
 
-	tokens := make([]Token, 0, 5)
-	tok_pos := 0
-
-	appendTok := func() {
-		if sb.Len() == 0 {
-			return
-		}
-
-		tok := Token{Val: sb.String(), Pos: tok_pos}
-		tokens = append(tokens, tok)
-		tok_pos++
-
-		sb.Reset()
-	}
-
-	for _, ch := range line {
-		// This is a comment line, stop tokenizing
-		if ch == ';' {
-			appendTok()
-			return tokens
-		}
-
-		if unicode.IsSpace(ch) || ch == '(' || ch == ')' || ch == ',' || ch == ':' {
-			if ch == ':' { // ':' is both seperator and a token
-				appendTok()
-				sb.WriteRune(':')
-				appendTok()
-				tok_pos = 0 // If an instruction follows a label declaration, pos should be relative to the opcode
-				continue
+// If cursor goes to a newline returns true, otherwise false
+func (l *Lexer) trimSpace() bool {
+	newLine := false
+	for int(l.Cursor) < len(l.Content) && l.isSpace(rune(l.Content[l.Cursor])) {
+		if l.Content[l.Cursor] == ';' {
+			for int(l.Cursor) < len(l.Content) && l.Content[l.Cursor] != '\n' {
+				l.Cursor++
 			}
-
-			appendTok()
-			continue
 		}
 
-		sb.WriteRune(ch)
+		// We need to increment the beginning of line and line counter too
+		// If this is a newline
+		ch := l.Content[l.Cursor]
+		l.Cursor++
+		if ch == '\n' {
+			newLine = true
+			l.Bol = l.Cursor
+			l.Line++
+		}
 	}
 
-	appendTok()
-	return tokens
+	return newLine
 }
 
-// returns error if an invalid token is passed
-func fillInstToken(inst *Instruction, tok Token) error {
-	switch tok.Pos {
-	case 0:
-		inst.Op = stringToOpcode(tok.Val)
-		if inst.Op == _Inst_Unknown {
-			return fmt.Errorf("Unknown opcode: '%s'\n", tok.Val)
-		}
-	case 1:
-		inst.Rd = parseRegisterValue(tok.Val)
-	case 2:
-		inst.Rs1 = parseRegisterValue(tok.Val)
-	case 3:
-		inst.Rs2 = parseRegisterValue(tok.Val)
-	default:
-		return fmt.Errorf("Invalid token: %#v\n", tok)
+func (l Lexer) peekNextToken() Token {
+	tok := l.nextToken()
+	return tok
+}
+
+func (l *Lexer) nextToken() Token {
+	// Consume spaces
+	newLine := l.trimSpace()
+	if newLine {
+		l.tok_num = 0
 	}
 
-	return nil
+
+	tok := Token{}
+	tok.line_num = l.Line
+	tok.start = l.Cursor - l.Bol
+	tok.num = l.tok_num
+
+	// Reached the end of content
+	if int(l.Cursor) >= len(l.Content) {
+		tok.Type = Tok_End
+		l.tok_num++
+		return tok
+	}
+
+	if isSymbolStart(l.Content[l.Cursor]) {
+		tok.Type = Tok_Symbol
+		l.Cursor++
+		for int(l.Cursor) < len(l.Content) && isSymbol(l.Content[l.Cursor]) {
+			l.Cursor++
+		}
+
+		tok.Value = l.Content[l.Bol+tok.start : l.Cursor]
+
+		l.tok_num++
+		return tok
+	}
+
+	if unicode.IsDigit(rune(l.Content[l.Cursor])) || l.Content[l.Cursor] == '-' {
+		l.Cursor++
+
+		tok.Type = Tok_Number
+		for int(l.Cursor) < len(l.Content) && unicode.IsDigit(rune(l.Content[l.Cursor])) {
+			l.Cursor++
+		}
+
+		// TODO: check if number has unallowed rune at the end
+		tok.Value = l.Content[l.Bol+tok.start : l.Cursor]
+
+		l.tok_num++
+		return tok
+	}
+
+	if l.Content[l.Cursor] == ':' {
+		tok.Type = Tok_Colon
+		tok.Value = ":"
+		l.Cursor++
+
+		l.tok_num++
+		return tok
+	}
+
+	tok.Type = Tok_Invalid
+	tok.Value = string(l.Content[l.Cursor])
+
+	l.tok_num++
+	return tok
+}
+
+// ====================================
+// ============== PARSER ==============
+// ====================================
+
+type Parser struct {
+	inst_count uint32
+
+	// Symbol table holding label_str -> line_num
+	symbol_table        map[string]uint32
+	insts_missing_label map[uint32]string
+
+	Program []Instruction
 }
 
 // Returns list of instructions parsed, the default pc and an error.
-func ParseProgramFromFile(filename string) ([]Instruction, uint, error) {
-	file, err := os.OpenFile(filename, os.O_RDONLY, 0)
+func ParseProgramFromFile(filename string) ([]Instruction, uint32, error) {
+	str, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("Failed to read file for parsing '%v': %v", filename, err.Error())
 	}
-	defer file.Close()
 
-	return ParseProgramFromReader(file)
+	return ParseProgramFromString(string(str))
 }
 
-func ParseProgramFromReader(r io.Reader) ([]Instruction, uint, error) {
-	symbol_table = make(Symbol_Table)
-	insts_missing_label = make(map[uint]string, 0)
+func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
+	parser := Parser{}
+	parser.symbol_table = make(map[string]uint32)
+	parser.insts_missing_label = make(map[uint32]string)
 
-	program := make([]Instruction, 0)
+	// Push End to the beginning for ret's at the end of the program.
+	parser.pushInstruction(newInstruction(Inst_End, 0, 0, 0))
 
-	program = append(program, newInstruction(Inst_End, 0, 0, 0))
-	line_num = 1
+	lexer := Lexer{}
+	lexer.Content = program_str
 
-	scanner := bufio.NewScanner(r)
-
-	// First fill the symbol table for accessing label addresses
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
+	inst := Instruction{}
+	tok := lexer.nextToken()
+	for tok.Type != Tok_End {
+		if tok.Type == Tok_Invalid {
+			return nil, 0, fmt.Errorf("%v:%v Invalid token '%v'", tok.line_num, tok.start+1, tok.Value)
 		}
 
-		tokens := tokenizeLine(line)
-		if len(tokens) >= 2 && tokens[1].Val == ":" {
-			// This is a label
-			symbol_table[tokens[0].Val] = line_num
-			tokens = tokens[2:]
+		// First token of line MUST be a symbol
+		if tok.num == 0 && tok.Type != Tok_Symbol {
+			return nil, 0, fmt.Errorf("%v:%v Expected 'symbol', got '%v'", tok.line_num, tok.start+1, tok.Value)
 		}
 
-		if len(tokens) <= 0 {
-			continue
-		}
-
-		var inst Instruction
-		for _, tok := range tokens {
-			err := fillInstToken(&inst, tok)
-			if err != nil {
-				return nil, 0, err
+		next := lexer.peekNextToken()
+		switch tok.Type {
+		case Tok_Symbol:
+			if next.Type == Tok_Colon { // If the next token is ':', this is a label declaration.
+				parser.symbol_table[tok.Value] = parser.inst_count
+			} else {
+				parser.fillInstructionToken(&inst, tok)
 			}
+
+		case Tok_Number:
+			parser.fillInstructionToken(&inst, tok)
 		}
 
-		// First expand the pseudo instruction, then determine the format
-		if _Inst_Pseudo_start < inst.Op && inst.Op < _Inst_Pseudo_end {
-			inst = expandPseudoInstruction(inst)
+		// Next token is in another line, push the instruction
+		if next.num == 0 && inst != (Instruction{}) {
+			// Push the previous instruction
+			parser.pushInstruction(inst)
+			inst = Instruction{}
 		}
 
-		inst._fmt = getInstructionFmt(inst)
+		// fmt.Printf("%v %v:%v %v\n", tok.num, tok.line_num, tok.start, tok.Value)
 
-		program = append(program, inst)
-		line_num++
+		tok = lexer.nextToken()
 	}
 
-	// If any unresolved label addr, resolve them
-	for i, l := range insts_missing_label {
-		inst := &program[i]
-
-		target, ok := symbol_table[l]
+	// Fill the missing label calls
+	for n, label := range parser.insts_missing_label {
+		target, ok := parser.symbol_table[label]
 		if !ok {
-			return nil, 0, fmt.Errorf("Undeclared label or illegal label use: '%s'\n", l)
+			return nil, 0, fmt.Errorf("Undeclared label '%v'", label)
 		}
 
-		offset := target - i
+		offset := target - n
 
+		inst := &parser.Program[n]
 		// based on different control instructions, the offset is stored in different place
 		switch inst._fmt {
 		case Fmt_B:
@@ -422,18 +339,75 @@ func ParseProgramFromReader(r io.Reader) ([]Instruction, uint, error) {
 		case Fmt_J:
 			inst.Rs1 = int32(offset)
 		default:
-			return nil, 0, fmt.Errorf("Illegal label use or unknown key: '%s'\n", l)
+			return nil, 0, fmt.Errorf("Illegal label use: '%s'", label)
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, 0, err
-	}
-
-	// If there is no 'main' lable start from the first instruction
-	pc, ok := symbol_table["main"]
+	pc, ok := parser.symbol_table["main"]
 	if !ok {
 		pc = 1
 	}
-	return program, pc, nil
+
+	// os.Exit(0)
+
+	return parser.Program, pc, nil
+}
+
+// Expandes if pseudo instruction then pushes to the program
+// Returns the pushed instruction
+func (p *Parser) pushInstruction(inst Instruction) Instruction {
+	inst = expandPseudoInstruction(inst)
+	inst._fmt = getInstructionFmt(inst)
+	p.Program = append(p.Program, inst)
+	p.inst_count++
+	return inst
+}
+
+func (p *Parser) fillInstructionToken(inst *Instruction, tok Token) {
+	if tok.num == 0 {
+		op := stringToOpcode(tok.Value)
+		if op == _Inst_Unknown {
+			fmt.Fprintf(os.Stderr, "%v:%v Unknown opcode '%v'\n", tok.line_num, tok.start, tok.Value)
+			os.Exit(1)
+		}
+
+		inst.Op = op
+		return
+	}
+
+	if inst == nil {
+		return
+	}
+
+	var val int32
+	switch tok.Type {
+	case Tok_Symbol: // Register name or label call
+		reg, ok := abiToRegNum[tok.Value]
+		if ok {
+			val = int32(reg)
+		} else { // Then this is a label call
+			l, ok := p.symbol_table[tok.Value]
+			if ok {
+				val = int32(l - p.inst_count)
+			} else {
+				// Add a record to the inst missing label
+				p.insts_missing_label[p.inst_count] = tok.Value
+			}
+		}
+	case Tok_Number:
+		num, _ := strconv.Atoi(tok.Value)
+		val = int32(num)
+	}
+
+	switch tok.num {
+	case 1: // Rd
+		inst.Rd = val
+	case 2: // Rs1
+		inst.Rs1 = val
+	case 3: // Rs2
+		inst.Rs2 = val
+	default:
+		fmt.Fprintf(os.Stderr, "%v:%v Unexpected token '%v'\n", tok.line_num, tok.start, tok.Value)
+		os.Exit(1)
+	}
 }

@@ -3,7 +3,6 @@ package vm
 import (
 	"fmt"
 	"log"
-	"strings"
 )
 
 const (
@@ -153,16 +152,14 @@ func (v *Vm) Reset() {
 
 // Returns an error if a parsing error occurs
 func (v *Vm) LoadProgramFromFile(fileName string) error {
-	// Parse the file etc...
 	program, pc, err := ParseProgramFromFile(fileName)
 	v.SetProgram(program, uint32(pc))
 
 	return err
 }
 
-func (v *Vm) LoadProgramFromStr(programStr string) error {
-	r := strings.NewReader(programStr)
-	program, pc, err := ParseProgramFromReader(r)
+func (v *Vm) LoadProgramFromStr(program_str string) error {
+	program, pc, err := ParseProgramFromString(program_str)
 	v.SetProgram(program, uint32(pc))
 
 	return err

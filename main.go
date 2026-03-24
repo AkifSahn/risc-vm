@@ -48,19 +48,19 @@ func main() {
 
 	config, err := vm.CreateConfig(MEM_SIZE, STACK_SIZE, 2, true, true)
 	if err != nil {
-		fmt.Printf("Configuration error: %s", err.Error())
+		fmt.Printf("Configuration error: %s\n", err.Error())
 		os.Exit(1)
 	}
 
 	machine, err := vm.CreateVm(*config)
 	if err != nil {
-		fmt.Printf("Failed to create vm: %s", err.Error())
+		fmt.Printf("Failed to create vm: %s\n", err.Error())
 		os.Exit(1)
 	}
 
 	err = machine.LoadProgramFromFile(*filename)
 	if err != nil {
-		log.Printf("Failed to load program from '%s': %s", *filename, err.Error())
+		log.Printf("Failed to load program from '%s': %s\n", *filename, err.Error())
 		os.Exit(1)
 	}
 

@@ -79,20 +79,20 @@ func TestAllExamples() error {
 
 		err = binary.Read(f, binary.LittleEndian, &saved_state.Config)
 		if err != nil {
-			fmt.Printf("Failed to read 'saved_state.config' from '%v': %v", path, err.Error())
+			fmt.Printf("Failed to read 'saved_state.config' from '%v': %v\n", path, err.Error())
 			return nil
 		}
 
 		err = binary.Read(f, binary.LittleEndian, &saved_state.Registers)
 		if err != nil {
-			fmt.Printf("Failed to read 'saved_state.registers' from '%v': %v", path, err.Error())
+			fmt.Printf("Failed to read 'saved_state.registers' from '%v': %v\n", path, err.Error())
 			return nil
 		}
 
 		saved_state.Memory = make([]byte, saved_state.Config.Mem_size)
 		_, err = f.Read(saved_state.Memory)
 		if err != nil {
-			fmt.Printf("Failed to read 'saved_state.memory' from '%v': %v", path, err.Error())
+			fmt.Printf("Failed to read 'saved_state.memory' from '%v': %v\n", path, err.Error())
 			return nil
 		}
 
@@ -107,7 +107,7 @@ func TestAllExamples() error {
 
 			err = vm.LoadProgramFromFile(fmt.Sprintf("%s/%s", SOURCE_FOLDER, src_name))
 			if err != nil {
-				fmt.Printf("Failed to load program '%v' for testing. '%v'", src_name, err.Error())
+				fmt.Printf("Failed to load program '%v' for testing. '%v'\n", src_name, err.Error())
 				return nil
 			}
 
