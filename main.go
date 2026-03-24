@@ -10,18 +10,21 @@ import (
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
-const MEM_SIZE = 65536 // 64KB
+const MEM_SIZE = 1024 
 const STACK_SIZE = 200 // We don't really need this
 
 func main() {
-	serve := flag.Bool("serve", false, "start the REST API server")
-	port := flag.String("port", "8080", "server port")
-	filename := flag.String("file", "", "assembly file to run")
+	serve := flag.Bool("serve", false, "start the REST API server.")
+	port := flag.String("port", "8080", "server port.")
 
-	list_cycles := flag.Bool("list-cycles", false, "List cycle-by-cycle stages")
+	filename := flag.String("file", "", "assembly file to run.")
+
+	mem_size := flag.Uint("mem", MEM_SIZE, "Simulator memory size in bytes.")
+
+	list_cycles := flag.Bool("list-cycles", false, "List cycle-by-cycle stages.")
 
 	save_test := flag.Bool("make-test", false, "Save the result of the execution as test data.")
-	run_tests := flag.Bool("run-tests", false, "Run tests for existing saved test data")
+	run_tests := flag.Bool("run-tests", false, "Run tests for existing saved test data.")
 
 	flag.Parse()
 
@@ -46,7 +49,7 @@ func main() {
 		return
 	}
 
-	config, err := vm.CreateConfig(MEM_SIZE, STACK_SIZE, 2, true, true)
+	config, err := vm.CreateConfig(uint32(*mem_size), STACK_SIZE, 2, true, true)
 	if err != nil {
 		fmt.Printf("Configuration error: %s\n", err.Error())
 		os.Exit(1)
