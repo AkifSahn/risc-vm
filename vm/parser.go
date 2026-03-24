@@ -152,7 +152,7 @@ func isSymbol(b byte) bool {
 }
 
 // TODO: Check if paranthesis are valid
-// We consider parans and ',' as a space
+// We consider params and ',' as a space
 func (l *Lexer) isSpace(ch rune) bool {
 	return unicode.IsSpace(ch) || ch == '(' || ch == ')' || ch == ',' || ch == ';'
 }
@@ -193,7 +193,6 @@ func (l *Lexer) nextToken() Token {
 		l.tok_num = 0
 	}
 
-
 	tok := Token{}
 	tok.line_num = l.Line
 	tok.start = l.Cursor - l.Bol
@@ -223,12 +222,22 @@ func (l *Lexer) nextToken() Token {
 		l.Cursor++
 
 		tok.Type = Tok_Number
-		for int(l.Cursor) < len(l.Content) && unicode.IsDigit(rune(l.Content[l.Cursor])) {
+		for int(l.Cursor) < len(l.Content) && !l.isSpace(rune(l.Content[l.Cursor])) {
+
+			// If any character after the first digit is not a digit, this is not a valid number
+			// We still want to get the whole token until a space character
+			// for reporting the whole word as an Tok_Invalid
+			if !unicode.IsDigit(rune(l.Content[l.Cursor])) {
+				tok.Type = Tok_Invalid
+			}
+
 			l.Cursor++
 		}
 
-		// TODO: check if number has unallowed rune at the end
 		tok.Value = l.Content[l.Bol+tok.start : l.Cursor]
+		if tok.Value == "-" {
+			tok.Type = Tok_Invalid
+		}
 
 		l.tok_num++
 		return tok
@@ -317,7 +326,7 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 			inst = Instruction{}
 		}
 
-		// fmt.Printf("%v %v:%v %v\n", tok.num, tok.line_num, tok.start, tok.Value)
+		// fmt.Printf("%v %v:%v %v\n", tok.num, tok.line_num+1, tok.start+1, tok.Value)
 
 		tok = lexer.nextToken()
 	}
@@ -347,8 +356,6 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 	if !ok {
 		pc = 1
 	}
-
-	// os.Exit(0)
 
 	return parser.Program, pc, nil
 }
