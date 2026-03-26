@@ -320,7 +320,7 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 		}
 
 		// Next token is in another line, push the instruction
-		if next.num == 0 && inst != (Instruction{}) {
+		if (next.num == 0 || next.Type == Tok_End) && inst != (Instruction{}) {
 			// Push the previous instruction
 			parser.pushInstruction(inst)
 			inst = Instruction{}
