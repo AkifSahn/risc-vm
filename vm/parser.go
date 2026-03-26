@@ -312,11 +312,17 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 			if next.Type == Tok_Colon { // If the next token is ':', this is a label declaration.
 				parser.symbol_table[tok.Value] = parser.inst_count
 			} else {
-				parser.fillInstructionToken(&inst, tok)
+				err := parser.fillInstructionToken(&inst, tok)
+				if err != nil {
+					return nil, 0, err
+				}
 			}
 
 		case Tok_Number:
-			parser.fillInstructionToken(&inst, tok)
+			err := parser.fillInstructionToken(&inst, tok)
+			if err != nil {
+				return nil, 0, err
+			}
 		}
 
 		// Next token is in another line, push the instruction
@@ -370,20 +376,19 @@ func (p *Parser) pushInstruction(inst Instruction) Instruction {
 	return inst
 }
 
-func (p *Parser) fillInstructionToken(inst *Instruction, tok Token) {
+func (p *Parser) fillInstructionToken(inst *Instruction, tok Token) error {
 	if tok.num == 0 {
 		op := stringToOpcode(tok.Value)
 		if op == _Inst_Unknown {
-			fmt.Fprintf(os.Stderr, "%v:%v Unknown opcode '%v'\n", tok.line_num, tok.start, tok.Value)
-			os.Exit(1)
+			return fmt.Errorf("%v:%v Unknown opcode '%v'\n", tok.line_num, tok.start, tok.Value)
 		}
 
 		inst.Op = op
-		return
+		return nil
 	}
 
 	if inst == nil {
-		return
+		return nil
 	}
 
 	var val int32
@@ -414,7 +419,8 @@ func (p *Parser) fillInstructionToken(inst *Instruction, tok Token) {
 	case 3: // Rs2
 		inst.Rs2 = val
 	default:
-		fmt.Fprintf(os.Stderr, "%v:%v Unexpected token '%v'\n", tok.line_num, tok.start, tok.Value)
-		os.Exit(1)
+		return fmt.Errorf("%v:%v Unexpected token '%v'\n", tok.line_num, tok.start, tok.Value)
 	}
+
+	return nil
 }

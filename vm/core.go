@@ -153,14 +153,20 @@ func (v *Vm) Reset() {
 // Returns an error if a parsing error occurs
 func (v *Vm) LoadProgramFromFile(fileName string) error {
 	program, pc, err := ParseProgramFromFile(fileName)
-	v.SetProgram(program, uint32(pc))
+
+	if err == nil {
+		v.SetProgram(program, uint32(pc))
+	}
 
 	return err
 }
 
 func (v *Vm) LoadProgramFromStr(program_str string) error {
 	program, pc, err := ParseProgramFromString(program_str)
-	v.SetProgram(program, uint32(pc))
+
+	if err == nil {
+		v.SetProgram(program, uint32(pc))
+	}
 
 	return err
 }
