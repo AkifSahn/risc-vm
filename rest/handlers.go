@@ -67,14 +67,14 @@ func getSessionHandler(w http.ResponseWriter, r *http.Request) {
 func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
 	var req LoadProgramRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"Invalid request body!", nil})
 		return
 	}
 
 	session.Reset()
 	err := session.LoadProgramFromStr(req.ProgramStr)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to parse given program: %s", err.Error()), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, GenericResponse{fmt.Sprintf("Failed to parse: %v", err.Error()), nil})
 		return
 	}
 
