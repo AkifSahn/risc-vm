@@ -279,6 +279,10 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 // flushes the IF/ID and ID/EX pipeline buffers
 func (v *Vm) flush() {
+	// Record the flushed instructions addr in the cycle_info
+	pc := v._fd_buff[0].pc
+	v.cycle_info.Flushed_pc = pc - 1
+
 	v._fd_buff[0].valid = false
 	v._fd_buff[1].valid = false
 }

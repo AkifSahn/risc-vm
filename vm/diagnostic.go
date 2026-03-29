@@ -22,6 +22,7 @@ const (
 
 type Cycle_Info struct {
 	Stage_pcs        [5]uint32   `json:"stages"`
+	Flushed_pc       uint32      `json:"flushed_instruction"`
 	Stalled          bool        `json:"stalled"`
 	S1_bypass_status bypass_type `json:"s1_bypass"`
 	S2_bypass_status bypass_type `json:"s2_bypass"`
@@ -46,7 +47,7 @@ func CreateDiagnosticsManager() Diagnostics_Manager {
 	return Diagnostics_Manager{}
 }
 
-func (dm *Diagnostics_Manager) Reset(){
+func (dm *Diagnostics_Manager) Reset() {
 	*dm = Diagnostics_Manager{}
 }
 
@@ -163,4 +164,3 @@ func (v *Vm) DumpStack(format Dump_Format) {
 
 	fmt.Println("------------")
 }
-
