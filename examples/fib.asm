@@ -1,9 +1,3 @@
-main:
-    li      a0,10 ; Input parameter
-    jal     ra,fib
-    sw      a0,-4(sp)
-    end
-
 fib:
     mv      a4,a0
     bge     zero,a0,.L4
@@ -23,3 +17,8 @@ fib:
     li      a0,0
     .L1:
     ret
+
+main:
+    li      a0,10 ; Input parameter
+    call    fib
+    sw      a0,-4(sp)

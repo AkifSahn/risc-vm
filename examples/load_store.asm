@@ -16,5 +16,3 @@ main:
     lh a1 0(sp)
     lw a2 0(sp)
     addi sp sp 4
-
-    end

@@ -288,7 +288,15 @@ func (v *Vm) flush() {
 }
 
 func (v *Vm) run_fetch() {
-	inst := v.program[v.Pc]
+	var inst Instruction
+	if v.Pc < uint32(v.Dm.Program_size) {
+		inst = v.program[v.Pc]
+	} else {
+		// If we reached to the end of the program, insert an END instruction to the pipeline
+		// When this instruction completes the pipeline, _halt flag will be set
+		// This method causes us to execute 1 cycle more.
+		inst = newInstruction(Inst_End, 0, 0, 0)
+	}
 
 	{
 		n, ok := v._instCycleTable[inst.Op]
@@ -661,8 +669,9 @@ func (v *Vm) run_writeback() {
 }
 
 func (v *Vm) RunPipelined() {
-	for !v._halt {
-		v.ExecuteCycle()
+	halt := false
+	for !halt {
+		halt = v.ExecuteCycle()
 	}
 }
 
@@ -672,7 +681,7 @@ func (v *Vm) RunPipelined() {
 //
 // This functions does exactly that, each stage has it's own instruction.
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
-func (v *Vm) ExecuteCycle() {
+func (v *Vm) ExecuteCycle() (halt bool) {
 	v.Dm.N_cycle++
 
 	v.cycle_info = Cycle_Info{}
@@ -681,23 +690,23 @@ func (v *Vm) ExecuteCycle() {
 	v.Memory_diff_addr = v.Memory_diff_addr[:0]
 	v.Register_diff_idx = v.Register_diff_idx[:0]
 
-	if v._mw_buff[1].valid && !v._halt {
+	if v._mw_buff[1].valid {
 		v.run_writeback()
 	}
 
-	if v._xm_buff[1].valid && !v._halt {
+	if v._xm_buff[1].valid {
 		v.run_memory()
 	}
 
-	if v._dx_buff[1].valid && !v._halt {
+	if v._dx_buff[1].valid {
 		v.run_execute()
 	}
 
-	if v._fd_buff[1].valid && !v._halt {
+	if v._fd_buff[1].valid {
 		v.run_decode()
 	}
 
-	if v.Pc < uint32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
+	if v.Pc <= uint32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
 
 		v.Dm.N_executed_inst++
@@ -723,6 +732,13 @@ func (v *Vm) ExecuteCycle() {
 	}
 
 	v.shiftPipelineBuffers()
+
+	// If v._halt is set and all the READ buffers are !valid, then program ended
+	if !v._fd_buff[1].valid && !v._dx_buff[1].valid && !v._xm_buff[1].valid && !v._mw_buff[1].valid {
+		return v._halt
+	}
+
+	return false
 }
 
 /*

@@ -15,4 +15,3 @@ loop_y:
         bne a0, zero, loop_x   ; keep looping while a0 != 0
     addi a1, a1, -1
     bne a1, zero, loop_y       ; keep looping while a1 != 0
-end

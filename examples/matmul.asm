@@ -1,53 +1,3 @@
-main:
-    addi    sp,sp,-128
-    sw      ra,124(sp)
-    li      a5,1
-    sw      a5,76(sp)
-    li      a5,2
-    sw      a5,80(sp)
-    li      a5,3
-    sw      a5,84(sp)
-    li      a5,4
-    sw      a5,88(sp)
-    li      a5,5
-    sw      a5,92(sp)
-    li      a5,6
-    sw      a5,96(sp)
-    li      a5,7
-    sw      a5,100(sp)
-    li      a5,8
-    sw      a5,104(sp)
-    li      a5,9
-    sw      a5,108(sp)
-    li      a5,10
-    sw      a5,40(sp)
-    li      a5,11
-    sw      a5,44(sp)
-    li      a5,12
-    sw      a5,48(sp)
-    li      a5,13
-    sw      a5,52(sp)
-    li      a5,14
-    sw      a5,56(sp)
-    li      a5,15
-    sw      a5,60(sp)
-    li      a5,16
-    sw      a5,64(sp)
-    li      a5,17
-    sw      a5,68(sp)
-    li      a5,18
-    sw      a5,72(sp)
-    addi    a5,sp,4
-    addi    a4,sp,40
-    addi    a3,sp,76
-    li      a2,3
-    mv      a1,a2
-    mv      a0,a2
-    call    matmul
-    lw      a0,4(sp)
-    lw      ra,124(sp)
-    addi    sp,sp,128
-    end
 matmul:
     ble     a0,zero,.L13
     addi    sp,sp,-16
@@ -106,3 +56,53 @@ matmul:
     jr      ra
     .L13:
     ret
+
+main:
+    addi    sp,sp,-128
+    sw      ra,124(sp)
+    li      a5,1
+    sw      a5,76(sp)
+    li      a5,2
+    sw      a5,80(sp)
+    li      a5,3
+    sw      a5,84(sp)
+    li      a5,4
+    sw      a5,88(sp)
+    li      a5,5
+    sw      a5,92(sp)
+    li      a5,6
+    sw      a5,96(sp)
+    li      a5,7
+    sw      a5,100(sp)
+    li      a5,8
+    sw      a5,104(sp)
+    li      a5,9
+    sw      a5,108(sp)
+    li      a5,10
+    sw      a5,40(sp)
+    li      a5,11
+    sw      a5,44(sp)
+    li      a5,12
+    sw      a5,48(sp)
+    li      a5,13
+    sw      a5,52(sp)
+    li      a5,14
+    sw      a5,56(sp)
+    li      a5,15
+    sw      a5,60(sp)
+    li      a5,16
+    sw      a5,64(sp)
+    li      a5,17
+    sw      a5,68(sp)
+    li      a5,18
+    sw      a5,72(sp)
+    addi    a5,sp,4
+    addi    a4,sp,40
+    addi    a3,sp,76
+    li      a2,3
+    mv      a1,a2
+    mv      a0,a2
+    call    matmul
+    lw      a0,4(sp)
+    lw      ra,124(sp)
+    addi    sp,sp,128
