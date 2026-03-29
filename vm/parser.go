@@ -44,6 +44,7 @@ var abiToRegNum = map[string]int{
 }
 
 var opcodeToStringMap = map[Inst_Op]string{
+	/* R-Type */
 	Inst_Add:   "add",
 	Inst_Sub:   "sub",
 	Inst_Mul:   "mul",
@@ -52,6 +53,8 @@ var opcodeToStringMap = map[Inst_Op]string{
 	Inst_Xor:   "xor",
 	Inst_Or:    "or",
 	Inst_And:   "and",
+
+	/* I-Type */
 	Inst_Addi:  "addi",
 	Inst_Subi:  "subi",
 	Inst_Xori:  "xori",
@@ -62,16 +65,28 @@ var opcodeToStringMap = map[Inst_Op]string{
 	Inst_Lh:    "lh",
 	Inst_Lb:    "lb",
 	Inst_Slli:  "slli",
+	Inst_Srli:  "srli",
+	Inst_Srai:  "srai",
+
+	/* S-Type */
 	Inst_Sw:    "sw",
 	Inst_Sh:    "sh",
 	Inst_Sb:    "sb",
+
+	/* B-Type */
 	Inst_Beq:   "beq",
 	Inst_Bne:   "bne",
 	Inst_Blt:   "blt",
 	Inst_Bge:   "bge",
+
+	/* J-Type */
 	Inst_Jal:   "jal",
+
+	/* U-Type */
 	Inst_Lui:   "lui",
 	Inst_Auipc: "auipc",
+
+	/* Pseudo Instructions */
 	Inst_Mv:    "mv",
 	Inst_Not:   "not",
 	Inst_Neg:   "neg",

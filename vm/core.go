@@ -443,6 +443,7 @@ func (v *Vm) run_execute() {
 	var branch_taken bool
 
 	switch inst.Op {
+	/* R-Type */
 	case Inst_Add:
 		inst._result = s1 + s2
 	case Inst_Sub:
@@ -460,6 +461,7 @@ func (v *Vm) run_execute() {
 	case Inst_And:
 		inst._result = s1 & s2
 
+	/* I-Type */
 	case Inst_Addi:
 		inst._result = s1 + inst._imm
 	case Inst_Subi:
@@ -470,24 +472,26 @@ func (v *Vm) run_execute() {
 		inst._result = s1 | inst._imm
 	case Inst_Andi:
 		inst._result = s1 & inst._imm
-
 	case Inst_Lw, Inst_Lh, Inst_Lb: // load
 		addr := s1 + inst._imm
 		inst._result = addr
-
 	case Inst_Jalr:
 		inst._result = int32(pc)
 		branch_taken = true
 		branch_target = uint32(s1 + inst._imm)
-		// v.pc = s1 + inst._imm
-
 	case Inst_Slli: // rd = rs1 << imm[0:4]
+		inst._result = int32(uint32(s1) << inst._imm)
+	case Inst_Srli:
+		inst._result = int32(uint32(s1) >> inst._imm)
+	case Inst_Srai:
 		inst._result = s1 << inst._imm
 
+	/* S-Type */
 	case Inst_Sw, Inst_Sh, Inst_Sb: // Store word
 		addr := s2 + inst._imm // In bytes
 		inst._result = addr    // Each memory cell holds one byte
 
+	/* B-Type */
 	case Inst_Beq:
 		if s1 == s2 {
 			branch_taken = true
@@ -509,11 +513,13 @@ func (v *Vm) run_execute() {
 			branch_target = uint32(int32(pc) + inst._imm - 1)
 		}
 
+	/* J-Type */
 	case Inst_Jal: // Jump And Link
 		inst._result = int32(pc)
 		branch_taken = true
 		branch_target = uint32(int32(pc) + inst._imm - 1)
 
+	/* U-Type */
 	case Inst_Lui:
 		inst._result = inst._imm
 	case Inst_Auipc:

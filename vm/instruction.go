@@ -43,6 +43,8 @@ const (
 	Inst_Andi
 	Inst_Jalr // Jump And Link Reg
 	Inst_Slli
+	Inst_Srli
+	Inst_Srai
 	_Inst_I_end
 
 	_Inst_S_start
