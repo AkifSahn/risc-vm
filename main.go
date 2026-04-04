@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
@@ -10,7 +11,7 @@ import (
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
-const MEM_SIZE = 1024 
+const MEM_SIZE = 1024
 const STACK_SIZE = 200 // We don't really need this
 
 func main() {
@@ -26,15 +27,16 @@ func main() {
 	save_test := flag.Bool("make-test", false, "Save the result of the execution as test data.")
 	run_tests := flag.Bool("run-tests", false, "Run tests for existing saved test data.")
 
+	dump_memory := flag.Bool("dump-memory", false, "Dump memory to the stdout. Disables the statistics print.")
+
 	flag.Parse()
 
-
-	if *run_tests{
+	if *run_tests {
 		err := vm.TestAllExamples()
 		if err != nil {
 			panic(err.Error())
 		}
-		return 
+		return
 	}
 
 	if *serve {
@@ -76,6 +78,15 @@ func main() {
 			os.Exit(1)
 		}
 
+		return
+	}
+
+	if *dump_memory {
+		err := binary.Write(os.Stdout, binary.LittleEndian, machine.Memory)
+		if err != nil {
+			fmt.Printf("Failed to dump memory to STDOUT: %v\n", err.Error())
+			os.Exit(1)
+		}
 		return
 	}
 
