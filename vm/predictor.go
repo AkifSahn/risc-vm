@@ -1,9 +1,5 @@
 package vm
 
-import (
-	"math"
-)
-
 // Num of bits used for addressing in the prediction buffer
 const BP_INDEX_BIT_NUM = 5
 const BP_INDEX_BITMASK = (1 << BP_INDEX_BIT_NUM) - 1
@@ -25,12 +21,14 @@ type Bp_Entry struct {
 func create_predictor(n_bit uint8) Branch_Predictor {
 	return Branch_Predictor{
 		n_bit:        n_bit,
-		_max_counter: uint32(math.Pow(2, float64(n_bit)) - 1),
+		_max_counter: uint32(1 << n_bit) - 1, // uint32(math.Pow(2, float64(n_bit)) - 1),
 	}
 }
 
-func (bp *Branch_Predictor) Reset(){
+func (bp *Branch_Predictor) Reset(nbit uint8){
 	bp.PredictionBuffer = [BP_BUFFER_SIZE]Bp_Entry{}
+	bp.n_bit = nbit
+	bp._max_counter = uint32(1 << nbit) - 1
 }
 
 // Returns the prediction and target_pc for a branch in given addr.

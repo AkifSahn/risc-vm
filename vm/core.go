@@ -126,8 +126,8 @@ func (v *Vm) Reset(config Vm_Config) {
 	// I don't know if this is a good way to reset the vm.
 	// We'll see...
 
-	v.Dm.Reset()
-	v.Bp.Reset()
+	v.Dm = Diagnostics_Manager{}
+	v.Bp.Reset(config.Bp_nbit)
 	v.cycle_info = Cycle_Info{}
 
 	// Reset the config to the given config
