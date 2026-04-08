@@ -35,6 +35,7 @@ type Vm_Config struct {
 	Bp_enabled         bool
 }
 
+// func CreateConfig(mem_size, stack_size uint32, bp_nbit uint8, forwarding, branch_prediction bool) (*Vm_Config, error) {
 func CreateConfig(mem_size, stack_size uint32, bp_nbit uint8, forwarding, branch_prediction bool) (*Vm_Config, error) {
 	if mem_size%WORD_SIZE != 0 {
 		return nil, fmt.Errorf("Invalid memory size '%d', Memory size must be a multiple of word size(%d).\n",
@@ -66,8 +67,9 @@ type Vm struct {
 	Bp         Branch_Predictor
 	cycle_info Cycle_Info
 
-	Pc      uint32
-	program []Instruction
+	_pc_init uint32
+	Pc       uint32
+	program  []Instruction
 
 	Registers [32]Register
 	Memory    []byte
@@ -120,7 +122,7 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 	return &vm, nil
 }
 
-func (v *Vm) Reset() {
+func (v *Vm) Reset(config Vm_Config) {
 	// I don't know if this is a good way to reset the vm.
 	// We'll see...
 
@@ -128,11 +130,15 @@ func (v *Vm) Reset() {
 	v.Bp.Reset()
 	v.cycle_info = Cycle_Info{}
 
+	// Reset the config to the given config
+	v.Config = config
+
 	v.Dm.Forwarding_enabled = v.Config.Forwarding_enabled
 	v.Dm.Bp_enabled = v.Config.Bp_enabled
 
-	v.Pc = 0
-	v.program = v.program[:0]
+	// We don't touch the program that is currently running, we just reset the
+	// pc value to the entry address for the program
+	v.SetProgram(v.program, v._pc_init)
 	v.Registers = [32]Register{}
 
 	// Clear the memory and registers
@@ -172,6 +178,7 @@ func (v *Vm) LoadProgramFromStr(program_str string) error {
 }
 
 func (v *Vm) SetProgram(program []Instruction, pc uint32) {
+	v._pc_init = pc
 	v.Pc = pc
 	v.program = program
 

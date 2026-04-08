@@ -5,6 +5,7 @@ type LoadProgramRequest struct {
 }
 
 type UpdateConfigRequest struct {
-	Forwarding       bool `json:"forwarding"`
-	BranchPrediction bool `json:"branch_prediction"`
+	MemorySize   uint32 `json:"memory_size"`
+	PredictorBit uint8  `json:"predictor_bit"`
+	Forwarding   bool   `json:"forwarding"`
 }

@@ -34,9 +34,20 @@ func SetupRoutes() *http.ServeMux {
 //
 // Creates a session and returns the session id.
 func newSessionHandler(w http.ResponseWriter, r *http.Request) {
-	id, err := newSession()
+	var req UpdateConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"Invalid request body!", nil})
+		return
+	}
+
+	config, err := vm.CreateConfig(req.MemorySize, req.MemorySize, req.PredictorBit, req.Forwarding, req.PredictorBit > 0)
 	if err != nil {
-		http.Error(w, "Failed to create session.", http.StatusInternalServerError)
+		writeJSON(w, http.StatusBadRequest, GenericResponse{err.Error(), nil})
+	}
+
+	id, err := newSession(*config)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, GenericResponse{err.Error(), nil})
 		return
 	}
 
@@ -71,7 +82,8 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 		return
 	}
 
-	session.Reset()
+	// Reset the vm and reload the program given
+	session.Reset(session.Config)
 	err := session.LoadProgramFromStr(req.ProgramStr)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, GenericResponse{fmt.Sprintf("Failed to parse: %v", err.Error()), nil})
@@ -89,6 +101,24 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 }
 
 func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
+	var req UpdateConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"Invalid request body!", nil})
+		return
+	}
+
+	config, err := vm.CreateConfig(req.MemorySize, req.MemorySize, req.PredictorBit, req.Forwarding, req.PredictorBit > 0)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, GenericResponse{
+			fmt.Sprintf("Failed to update config: %v", err.Error()),
+			nil,
+		})
+		return
+	}
+
+	session.Reset(*config)
+
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", nil})
 }
 
 // POST /api/session/{id}/step
@@ -99,6 +129,7 @@ func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 	session.ExecuteCycle()
 
 	data := session.GetState()
+
 	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
 }
 
