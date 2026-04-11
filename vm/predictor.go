@@ -21,14 +21,14 @@ type Bp_Entry struct {
 func create_predictor(n_bit uint8) Branch_Predictor {
 	return Branch_Predictor{
 		n_bit:        n_bit,
-		_max_counter: uint32(1 << n_bit) - 1, // uint32(math.Pow(2, float64(n_bit)) - 1),
+		_max_counter: uint32(1<<n_bit) - 1, // uint32(math.Pow(2, float64(n_bit)) - 1),
 	}
 }
 
-func (bp *Branch_Predictor) Reset(nbit uint8){
+func (bp *Branch_Predictor) Reset(nbit uint8) {
 	bp.PredictionBuffer = [BP_BUFFER_SIZE]Bp_Entry{}
 	bp.n_bit = nbit
-	bp._max_counter = uint32(1 << nbit) - 1
+	bp._max_counter = uint32(1<<nbit) - 1
 }
 
 // Returns the prediction and target_pc for a branch in given addr.
@@ -45,6 +45,22 @@ func (bp *Branch_Predictor) predict(pc uint32) (prediction bool, target uint32) 
 	}
 
 	return entry.counter >= bp._max_counter/2+1, entry.target
+}
+
+// This function does not makes a prediction, only returns the target, if there is any entry for the given pc.
+// If there is no valid entry, returns 0, false.
+func (bp *Branch_Predictor) getTarget(pc uint32) (target uint32, valid bool) {
+	index := pc & BP_INDEX_BITMASK
+	tag := pc &^ BP_INDEX_BITMASK
+
+	entry := bp.PredictionBuffer[index]
+
+	// BTB miss. Return valid = false
+	if !entry.valid || entry.tag != tag {
+		return 0, false
+	}
+
+	return entry.target, true
 }
 
 // Updates the n-bit counter based on the real outcome of the branch.

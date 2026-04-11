@@ -363,12 +363,18 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 
 		inst := &parser.Program[n]
 		// based on different control instructions, the offset is stored in different place
+
 		switch inst._fmt {
 		case Fmt_B:
 			inst.Rs2 = int32(offset)
 		case Fmt_J:
 			inst.Rs1 = int32(offset)
 		default:
+			// Inst_Jalr is an Fmt_I instruction but also a branch.
+			if inst.Op == Inst_Jalr{
+				inst.Rs2 = int32(offset)
+				break
+			}
 			return nil, 0, fmt.Errorf("Illegal label use: '%s'", label)
 		}
 	}

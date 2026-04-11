@@ -339,13 +339,13 @@ func (v *Vm) run_decode() {
 		v._stall_map &= ^STALL_RAW
 	}
 
-	// If this is a branch instruction, stall the fetch until the branch addr is calculated
-	if inst.isControlInstruction() {
+	// If this is a conditional branch instruction,
+	// stall the fetch until the branch addr is calculated or make prediction
+	if inst.isConditionalBranch() {
 		// If branch prediction is enabled, do prediction.
 		// If not, just stall
 		if v.Config.Bp_enabled {
 			taken, target := v.Bp.predict(uint32(pc - 1))
-
 			if taken {
 				v.Pc = target
 			}
@@ -396,6 +396,22 @@ func (v *Vm) run_decode() {
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	}
 
+	// For unconditional branches, we don't need to make prediction
+	// we know they will be always taken. If we know the addr in decode, branch immediately.
+	// If we don't know the address yet, stall until it is known.
+	if inst.isUnconditionalBranch() {
+		if inst.Op == Inst_Jalr {
+			target, valid := v.Bp.getTarget(pc)
+			if valid {
+				v.Pc = target
+			}else{
+				v._stall_map |= STALL_BRANCH
+			}
+		} else {
+			v.Pc = uint32(int32(v.Pc-1) + inst._imm)
+		}
+	}
+
 	v._dx_buff[0].inst = inst
 	v._dx_buff[0].pc = pc
 	v._dx_buff[0].valid = true
@@ -411,7 +427,7 @@ func (v *Vm) run_execute() {
 	inst._ex_remaining--
 
 	// Handle multi cycle instructions
-	// Fed the read buffer back to write if need more cycles to execute
+	// Feed the read buffer back to write if need more cycles to execute
 	if inst._ex_remaining > 0 {
 		v._dx_buff[0] = v._dx_buff[1]
 		v._dx_buff[0].inst._ex_remaining = inst._ex_remaining // Propagate the ex_remaining
@@ -533,8 +549,7 @@ func (v *Vm) run_execute() {
 		inst._result = int32(pc) + inst._imm - 1
 	}
 
-	// Branch address is calculated, we can stop stalling.
-	if inst.isControlInstruction() {
+	if inst.isConditionalBranch() {
 		v.Dm.N_branch++
 
 		correct := false
@@ -558,7 +573,17 @@ func (v *Vm) run_execute() {
 				v.Pc = pc
 			}
 		}
+	}
 
+	// Inst_Jalr is an indirect, conditional branch operation.
+	// If there was a stall, dissolve the stall, update the pc and save the target pc to the BTB.
+	// If there was no stall, we don't need to do anything.
+	if inst.Op == Inst_Jalr {
+		if v._stall_map&STALL_BRANCH != 0 {
+			v._stall_map &= ^STALL_BRANCH
+			v.Pc = branch_target
+			v.Bp.update(uint32(pc-1), branch_target, true)
+		}
 	}
 
 	v._xm_buff[0].inst = inst

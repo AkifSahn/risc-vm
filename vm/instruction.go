@@ -186,12 +186,24 @@ func (inst Instruction) getAluInputRegisters() (int32, int32) {
 	}
 }
 
-func (inst Instruction) isControlInstruction() bool {
-	if inst._fmt == Fmt_B || inst._fmt == Fmt_J || inst.Op == Inst_Jalr {
+func (inst Instruction) isUnconditionalBranch() bool {
+	if inst._fmt == Fmt_J || inst.Op == Inst_Jalr {
 		return true
 	}
 
 	return false
+}
+
+func (inst Instruction) isConditionalBranch() bool {
+	if inst._fmt == Fmt_B {
+		return true
+	}
+
+	return false
+}
+
+func (inst Instruction) isBranch() bool{
+	return inst.isConditionalBranch() || inst.isUnconditionalBranch()
 }
 
 func (inst Instruction) isLoad() bool {
