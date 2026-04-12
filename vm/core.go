@@ -401,7 +401,7 @@ func (v *Vm) run_decode() {
 	// If we don't know the address yet, stall until it is known.
 	if inst.isUnconditionalBranch() {
 		if inst.Op == Inst_Jalr {
-			target, valid := v.Bp.getTarget(pc)
+			target, valid := v.Bp.getTarget(pc-1)
 			if valid {
 				v.Pc = target
 			}else{
@@ -582,7 +582,7 @@ func (v *Vm) run_execute() {
 		if v._stall_map&STALL_BRANCH != 0 {
 			v._stall_map &= ^STALL_BRANCH
 			v.Pc = branch_target
-			v.Bp.update(uint32(pc-1), branch_target, true)
+			v.Bp.update(pc-1, branch_target, true)
 		}
 	}
 
