@@ -188,7 +188,8 @@ func (v *Vm) SetProgram(program []Instruction, entry_index uint32) {
 	v.Dm.Program_size = uint(len(program))
 	v.Dm.N_cycle = 0
 	v.Dm.N_stalls = 0
-	v.Dm.N_executed_inst = 0
+	v.Dm.N_fetched = 0
+	v.Dm.N_retired = 0
 }
 
 // This function checks if a register at decode stage can be forwarded later on.
@@ -308,13 +309,13 @@ func (v *Vm) run_fetch() {
 		// End of the program, set _halt as true so that execution stops when
 		// the pipeline is drained.
 		// Also, decrement the fetched instruction counter by 1, we don't count this as a fetch
-		v.Dm.N_executed_inst -= 1
+		v.Dm.N_fetched -= 1
 		v._halt = true
 		return
 	}
 
 	if inst.Op == Inst_End {
-		v.Dm.N_executed_inst -= 1
+		v.Dm.N_fetched -= 1
 		v._halt = true
 		return
 	}
@@ -699,8 +700,9 @@ func (v *Vm) run_writeback() {
 	inst := v._mw_buff[1].inst
 	pc := v._mw_buff[1].pc
 
-	// Update the cycle info
+	// Update the cycle info and diagnostics
 	v.cycle_info.Stage_pcs[4] = pc
+	v.Dm.N_retired += 1
 
 	// We don't want to writeback if instruction type is S
 	if inst._fmt == Fmt_R || inst._fmt == Fmt_I || inst._fmt == Fmt_U || inst._fmt == Fmt_J {
@@ -756,7 +758,8 @@ func (v *Vm) ExecuteCycle() {
 	}
 
 	if v.Pc/4 <= uint32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
-		v.Dm.N_executed_inst++
+		v.Dm.N_fetched++
+
 		v.run_fetch()
 	}
 

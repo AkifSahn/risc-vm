@@ -29,13 +29,14 @@ type Cycle_Info struct {
 }
 
 type Diagnostics_Manager struct {
-	Program_size    uint
-	N_executed_inst uint
-	N_cycle         uint
-	N_stalls        uint
-	N_forwards      uint
-	N_branch        uint
-	N_mispred       uint
+	Program_size uint
+	N_fetched    uint
+	N_retired    uint
+	N_cycle      uint
+	N_stalls     uint
+	N_forwards   uint
+	N_branch     uint
+	N_mispred    uint
 
 	Cycle_infos []Cycle_Info
 
@@ -48,21 +49,22 @@ func CreateDiagnosticsManager() Diagnostics_Manager {
 }
 
 func (dm *Diagnostics_Manager) CalculateCpi() float32 {
-	if dm.N_cycle <= 0 && dm.N_executed_inst <= 0 {
+	if dm.N_cycle <= 0 && dm.N_retired <= 0 {
 		return -1
 	}
 
-	return float32(dm.N_cycle) / float32(dm.N_executed_inst)
+	return float32(dm.N_cycle) / float32(dm.N_retired)
 }
 
 func (dm *Diagnostics_Manager) PrintDiagnostics() {
 	fmt.Println("--- Diagnostics ---")
 	fmt.Printf("%-30s %d\n", "Program size:", dm.Program_size)
 	fmt.Printf("%-30s %.2f\n", "CPI:", dm.CalculateCpi())
-	fmt.Printf("%-30s %d\n", "instructions executed:", dm.N_executed_inst)
-	fmt.Printf("%-30s %d\n", "cycles:", dm.N_cycle)
-	fmt.Printf("%-30s %d\n", "stalls:", dm.N_stalls)
-	fmt.Printf("%-30s %d\n", "forwards:", dm.N_forwards)
+	fmt.Printf("%-30s %d\n", "Fetched instructions:", dm.N_fetched)
+	fmt.Printf("%-30s %d\n", "Retired instructions:", dm.N_retired)
+	fmt.Printf("%-30s %d\n", "Cycles:", dm.N_cycle)
+	fmt.Printf("%-30s %d\n", "Stalls:", dm.N_stalls)
+	fmt.Printf("%-30s %d\n", "Forwards:", dm.N_forwards)
 
 	if dm.Bp_enabled {
 		if dm.N_branch <= 0 {
