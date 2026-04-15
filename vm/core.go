@@ -289,13 +289,16 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 // flushes the IF/ID and ID/EX pipeline buffers
 func (v *Vm) flush() {
+	// If we are flushing and 'end' instruction, reverse the halt since the
+	// 'end' instruction is not in the pipeline, we should not flush the buffers
+	if v._halt {
+		v._halt = false
+		return
+	}
+
 	// Record the flushed instructions addr in the cycle_info
 	pc := v._fd_buff[0].pc
 	v.cycle_info.Flushed_pc = pc
-	// If we are flushing and 'end' instruction, reverse the halt
-	if v._halt {
-		v._halt = false
-	}
 
 	v._fd_buff[0].valid = false
 	v._fd_buff[1].valid = false
