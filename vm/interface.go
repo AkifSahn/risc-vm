@@ -17,7 +17,7 @@ func (v *Vm) GetState() Vm_State {
 		Registers: map[uint8]int32{},
 		Memory:    map[uint32]byte{},
 		CycleInfo: v.Dm.Cycle_infos[len(v.Dm.Cycle_infos)-1],
-		Halt:      v._halt,
+		Halt:      v.Halted,
 	}
 
 	// TODO: Fix, load byte by byte not word

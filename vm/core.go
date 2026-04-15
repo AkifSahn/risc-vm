@@ -91,7 +91,8 @@ type Vm struct {
 	// Each stall is same in principle, but their cause may be different.
 	_stall_map byte
 
-	_halt bool
+	Halted bool // Only gets set when the program is fully stopped and no longer executing.
+	_halt  bool // internal control flag to indicate that program will end when the pipeline is drained.
 }
 
 func CreateVm(config Vm_Config) (*Vm, error) {
@@ -150,6 +151,7 @@ func (v *Vm) Reset(config Vm_Config) {
 
 	v._stall_map = 0
 	v._halt = false
+	v.Halted = false
 
 	// Shifting twice totally empties the both read and write buffers
 	v.shiftPipelineBuffers()
@@ -289,6 +291,10 @@ func (v *Vm) flush() {
 	// Record the flushed instructions addr in the cycle_info
 	pc := v._fd_buff[0].pc
 	v.cycle_info.Flushed_pc = pc
+	// If we are flushing and 'end' instruction, reverse the halt
+	if v._halt {
+		v._halt = false
+	}
 
 	v._fd_buff[0].valid = false
 	v._fd_buff[1].valid = false
@@ -299,10 +305,18 @@ func (v *Vm) run_fetch() {
 	if v.Pc/4 < uint32(v.Dm.Program_size) {
 		inst = v.program[v.Pc/4]
 	} else {
-		// If we reached to the end of the program, insert an END instruction to the pipeline
-		// When this instruction completes the pipeline, _halt flag will be set
-		// This method causes us to execute 1 cycle more.
-		inst = newInstruction(Inst_End, 0, 0, 0)
+		// End of the program, set _halt as true so that execution stops when
+		// the pipeline is drained.
+		// Also, decrement the fetched instruction counter by 1, we don't count this as a fetch
+		v.Dm.N_executed_inst -= 1
+		v._halt = true
+		return
+	}
+
+	if inst.Op == Inst_End {
+		v.Dm.N_executed_inst -= 1
+		v._halt = true
+		return
 	}
 
 	{
@@ -618,6 +632,8 @@ func (v *Vm) memoryRead(addr uint32, n uint8) int32 {
 	if addr%uint32(n) != 0 {
 		log.Printf("Illegal read attempt from unaligned memory address: '%d'."+
 			"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
+		// TODO: _halt waits for the pipeline to drain
+		// this is an error, we should immediately halt in this case.
 		v._halt = true
 		return 0
 	}
@@ -686,11 +702,6 @@ func (v *Vm) run_writeback() {
 	// Update the cycle info
 	v.cycle_info.Stage_pcs[4] = pc
 
-	if inst.Op == Inst_End {
-		v._halt = true
-		return
-	}
-
 	// We don't want to writeback if instruction type is S
 	if inst._fmt == Fmt_R || inst._fmt == Fmt_I || inst._fmt == Fmt_U || inst._fmt == Fmt_J {
 		// set the destination register as free
@@ -708,9 +719,8 @@ func (v *Vm) run_writeback() {
 }
 
 func (v *Vm) RunPipelined() {
-	halt := false
-	for !halt {
-		halt = v.ExecuteCycle()
+	for !v.Halted {
+		v.ExecuteCycle()
 	}
 }
 
@@ -720,7 +730,7 @@ func (v *Vm) RunPipelined() {
 //
 // This functions does exactly that, each stage has it's own instruction.
 // At the end of each cycle, instructions moves to the next stage in the pipeline.
-func (v *Vm) ExecuteCycle() (halt bool) {
+func (v *Vm) ExecuteCycle() {
 	v.Dm.N_cycle++
 
 	v.cycle_info = Cycle_Info{}
@@ -746,9 +756,8 @@ func (v *Vm) ExecuteCycle() (halt bool) {
 	}
 
 	if v.Pc/4 <= uint32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
-		v.run_fetch()
-
 		v.Dm.N_executed_inst++
+		v.run_fetch()
 	}
 
 	// Save the cycle state
@@ -772,12 +781,10 @@ func (v *Vm) ExecuteCycle() (halt bool) {
 
 	v.shiftPipelineBuffers()
 
-	// If v._halt is set and all the READ buffers are !valid, then program ended
-	if !v._fd_buff[1].valid && !v._dx_buff[1].valid && !v._xm_buff[1].valid && !v._mw_buff[1].valid {
-		return v._halt
+	// If v._halt is set and the pipeline buffers are drained then program is ended.
+	if v._halt && !v._fd_buff[1].valid && !v._dx_buff[1].valid && !v._xm_buff[1].valid && !v._mw_buff[1].valid {
+		v.Halted = true
 	}
-
-	return false
 }
 
 /*
