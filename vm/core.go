@@ -158,28 +158,28 @@ func (v *Vm) Reset(config Vm_Config) {
 
 // Returns an error if a parsing error occurs
 func (v *Vm) LoadProgramFromFile(fileName string) error {
-	program, pc, err := ParseProgramFromFile(fileName)
+	program, entry_index, err := ParseProgramFromFile(fileName)
 
 	if err == nil {
-		v.SetProgram(program, uint32(pc))
+		v.SetProgram(program, uint32(entry_index))
 	}
 
 	return err
 }
 
 func (v *Vm) LoadProgramFromStr(program_str string) error {
-	program, pc, err := ParseProgramFromString(program_str)
+	program, entry_index, err := ParseProgramFromString(program_str)
 
 	if err == nil {
-		v.SetProgram(program, uint32(pc))
+		v.SetProgram(program, uint32(entry_index))
 	}
 
 	return err
 }
 
-func (v *Vm) SetProgram(program []Instruction, pc uint32) {
-	v._pc_init = pc
-	v.Pc = pc
+func (v *Vm) SetProgram(program []Instruction, entry_index uint32) {
+	v._pc_init = entry_index * 4
+	v.Pc = entry_index * 4
 	v.program = program
 
 	// Reset the Diagnostics_Manager
@@ -288,7 +288,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 func (v *Vm) flush() {
 	// Record the flushed instructions addr in the cycle_info
 	pc := v._fd_buff[0].pc
-	v.cycle_info.Flushed_pc = pc - 1
+	v.cycle_info.Flushed_pc = pc
 
 	v._fd_buff[0].valid = false
 	v._fd_buff[1].valid = false
@@ -296,8 +296,8 @@ func (v *Vm) flush() {
 
 func (v *Vm) run_fetch() {
 	var inst Instruction
-	if v.Pc < uint32(v.Dm.Program_size) {
-		inst = v.program[v.Pc]
+	if v.Pc/4 < uint32(v.Dm.Program_size) {
+		inst = v.program[v.Pc/4]
 	} else {
 		// If we reached to the end of the program, insert an END instruction to the pipeline
 		// When this instruction completes the pipeline, _halt flag will be set
@@ -318,11 +318,11 @@ func (v *Vm) run_fetch() {
 		v.cycle_info.Stage_pcs[0] = v.Pc
 	}
 
-	v.Pc++
-
 	v._fd_buff[0].inst = inst
 	v._fd_buff[0].pc = v.Pc
 	v._fd_buff[0].valid = true
+
+	v.Pc += 4
 }
 
 func (v *Vm) run_decode() {
@@ -345,7 +345,7 @@ func (v *Vm) run_decode() {
 		// If branch prediction is enabled, do prediction.
 		// If not, just stall
 		if v.Config.Bp_enabled {
-			taken, target := v.Bp.predict(uint32(pc - 1))
+			taken, target := v.Bp.predict(pc)
 			if taken {
 				v.Pc = target
 			}
@@ -355,7 +355,7 @@ func (v *Vm) run_decode() {
 	}
 
 	// Update the cyle info
-	v.cycle_info.Stage_pcs[1] = uint32(pc) - 1
+	v.cycle_info.Stage_pcs[1] = pc // uint32(pc) - 1
 
 	switch inst._fmt {
 	case Fmt_R:
@@ -401,14 +401,14 @@ func (v *Vm) run_decode() {
 	// If we don't know the address yet, stall until it is known.
 	if inst.isUnconditionalBranch() {
 		if inst.Op == Inst_Jalr {
-			target, valid := v.Bp.getTarget(pc-1)
+			target, valid := v.Bp.getTarget(pc)
 			if valid {
 				v.Pc = target
-			}else{
+			} else {
 				v._stall_map |= STALL_BRANCH
 			}
 		} else {
-			v.Pc = uint32(int32(v.Pc-1) + inst._imm)
+			v.Pc = uint32(int32(pc) + inst._imm)
 		}
 	}
 
@@ -422,7 +422,7 @@ func (v *Vm) run_execute() {
 	pc := v._dx_buff[1].pc
 
 	// Update the cyle info
-	v.cycle_info.Stage_pcs[2] = uint32(pc) - 1
+	v.cycle_info.Stage_pcs[2] = pc
 
 	inst._ex_remaining--
 
@@ -519,34 +519,35 @@ func (v *Vm) run_execute() {
 		if s1 == s2 {
 			branch_taken = true
 		}
-		branch_target = uint32(int32(pc)+inst._imm) - 1 // v.pc holds the next instruction hence -1
+		branch_target = uint32(int32(pc) + inst._imm)
 	case Inst_Bne:
 		if s1 != s2 {
 			branch_taken = true
 		}
-		branch_target = uint32(int32(pc) + inst._imm - 1)
+		branch_target = uint32(int32(pc) + inst._imm)
 	case Inst_Blt:
 		if s1 < s2 {
 			branch_taken = true
 		}
-		branch_target = uint32(int32(pc) + inst._imm - 1)
+		branch_target = uint32(int32(pc) + inst._imm)
 	case Inst_Bge:
 		if s1 >= s2 {
 			branch_taken = true
-			branch_target = uint32(int32(pc) + inst._imm - 1)
+			branch_target = uint32(int32(pc) + inst._imm)
 		}
 
 	/* J-Type */
 	case Inst_Jal: // Jump And Link
-		inst._result = int32(pc)
+		inst._result = int32(pc + 4) // store the next instruction
 		branch_taken = true
-		branch_target = uint32(int32(pc) + inst._imm - 1)
+		branch_target = uint32(int32(pc) + inst._imm)
 
 	/* U-Type */
 	case Inst_Lui:
 		inst._result = inst._imm
 	case Inst_Auipc:
-		inst._result = int32(pc) + inst._imm - 1
+		// TODO: check if the immediate value is aligned or not
+		inst._result = int32(pc) + inst._imm
 	}
 
 	if inst.isConditionalBranch() {
@@ -555,7 +556,7 @@ func (v *Vm) run_execute() {
 		correct := false
 		// If prediction is enabled, update the predictor and flush if necessary
 		if v.Config.Bp_enabled {
-			correct = v.Bp.update(uint32(pc-1), branch_target, branch_taken)
+			correct = v.Bp.update(pc, branch_target, branch_taken)
 			if !correct {
 				v.Dm.N_mispred++
 				v.flush()
@@ -570,7 +571,7 @@ func (v *Vm) run_execute() {
 			if branch_taken {
 				v.Pc = branch_target
 			} else {
-				v.Pc = pc
+				v.Pc = pc + 4 // Fetch the next instruction
 			}
 		}
 	}
@@ -582,7 +583,7 @@ func (v *Vm) run_execute() {
 		if v._stall_map&STALL_BRANCH != 0 {
 			v._stall_map &= ^STALL_BRANCH
 			v.Pc = branch_target
-			v.Bp.update(pc-1, branch_target, true)
+			v.Bp.update(pc, branch_target, true)
 		}
 	}
 
@@ -634,7 +635,7 @@ func (v *Vm) run_memory() {
 	pc := v._xm_buff[1].pc
 
 	// Update the cycle info
-	v.cycle_info.Stage_pcs[3] = uint32(pc) - 1
+	v.cycle_info.Stage_pcs[3] = pc
 
 	// Memory layout is little-endian
 	// b3 b2 b1 b0
@@ -683,7 +684,7 @@ func (v *Vm) run_writeback() {
 	pc := v._mw_buff[1].pc
 
 	// Update the cycle info
-	v.cycle_info.Stage_pcs[4] = uint32(pc) - 1
+	v.cycle_info.Stage_pcs[4] = pc
 
 	if inst.Op == Inst_End {
 		v._halt = true
@@ -744,7 +745,7 @@ func (v *Vm) ExecuteCycle() (halt bool) {
 		v.run_decode()
 	}
 
-	if v.Pc <= uint32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
+	if v.Pc/4 <= uint32(v.Dm.Program_size) && !v._halt && v._stall_map == 0 {
 		v.run_fetch()
 
 		v.Dm.N_executed_inst++

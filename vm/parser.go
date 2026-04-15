@@ -45,59 +45,59 @@ var abiToRegNum = map[string]int{
 
 var opcodeToStringMap = map[Inst_Op]string{
 	/* R-Type */
-	Inst_Add:   "add",
-	Inst_Sub:   "sub",
-	Inst_Mul:   "mul",
-	Inst_Div:   "div",
-	Inst_Rem:   "rem",
-	Inst_Xor:   "xor",
-	Inst_Or:    "or",
-	Inst_And:   "and",
+	Inst_Add: "add",
+	Inst_Sub: "sub",
+	Inst_Mul: "mul",
+	Inst_Div: "div",
+	Inst_Rem: "rem",
+	Inst_Xor: "xor",
+	Inst_Or:  "or",
+	Inst_And: "and",
 
 	/* I-Type */
-	Inst_Addi:  "addi",
-	Inst_Subi:  "subi",
-	Inst_Xori:  "xori",
-	Inst_Ori:   "ori",
-	Inst_Andi:  "andi",
-	Inst_Jalr:  "jalr",
-	Inst_Lw:    "lw",
-	Inst_Lh:    "lh",
-	Inst_Lb:    "lb",
-	Inst_Slli:  "slli",
-	Inst_Srli:  "srli",
-	Inst_Srai:  "srai",
+	Inst_Addi: "addi",
+	Inst_Subi: "subi",
+	Inst_Xori: "xori",
+	Inst_Ori:  "ori",
+	Inst_Andi: "andi",
+	Inst_Jalr: "jalr",
+	Inst_Lw:   "lw",
+	Inst_Lh:   "lh",
+	Inst_Lb:   "lb",
+	Inst_Slli: "slli",
+	Inst_Srli: "srli",
+	Inst_Srai: "srai",
 
 	/* S-Type */
-	Inst_Sw:    "sw",
-	Inst_Sh:    "sh",
-	Inst_Sb:    "sb",
+	Inst_Sw: "sw",
+	Inst_Sh: "sh",
+	Inst_Sb: "sb",
 
 	/* B-Type */
-	Inst_Beq:   "beq",
-	Inst_Bne:   "bne",
-	Inst_Blt:   "blt",
-	Inst_Bge:   "bge",
+	Inst_Beq: "beq",
+	Inst_Bne: "bne",
+	Inst_Blt: "blt",
+	Inst_Bge: "bge",
 
 	/* J-Type */
-	Inst_Jal:   "jal",
+	Inst_Jal: "jal",
 
 	/* U-Type */
 	Inst_Lui:   "lui",
 	Inst_Auipc: "auipc",
 
 	/* Pseudo Instructions */
-	Inst_Mv:    "mv",
-	Inst_Not:   "not",
-	Inst_Neg:   "neg",
-	Inst_Li:    "li",
-	Inst_Jr:    "jr",
-	Inst_Ret:   "ret",
-	Inst_Ble:   "ble",
-	Inst_Bgt:   "bgt",
-	Inst_J:     "j",
-	Inst_Call:  "call",
-	Inst_End:   "end",
+	Inst_Mv:   "mv",
+	Inst_Not:  "not",
+	Inst_Neg:  "neg",
+	Inst_Li:   "li",
+	Inst_Jr:   "jr",
+	Inst_Ret:  "ret",
+	Inst_Ble:  "ble",
+	Inst_Bgt:  "bgt",
+	Inst_J:    "j",
+	Inst_Call: "call",
+	Inst_End:  "end",
 }
 
 var stringToOpcodeMap map[string]Inst_Op = nil
@@ -300,6 +300,9 @@ func ParseProgramFromFile(filename string) ([]Instruction, uint32, error) {
 
 func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 	parser := Parser{}
+
+	// These, holds the **index** of instruction in the program array
+	// Multiply by 4 to convert to instruction address.
 	parser.symbol_table = make(map[string]uint32)
 	parser.insts_missing_label = make(map[uint32]string)
 
@@ -359,7 +362,7 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 			return nil, 0, fmt.Errorf("Undeclared label '%v'", label)
 		}
 
-		offset := target - n
+		offset := (target - n) * 4
 
 		inst := &parser.Program[n]
 		// based on different control instructions, the offset is stored in different place
@@ -371,7 +374,7 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 			inst.Rs1 = int32(offset)
 		default:
 			// Inst_Jalr is an Fmt_I instruction but also a branch.
-			if inst.Op == Inst_Jalr{
+			if inst.Op == Inst_Jalr {
 				inst.Rs2 = int32(offset)
 				break
 			}
@@ -379,12 +382,12 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 		}
 	}
 
-	pc, ok := parser.symbol_table["main"]
+	entry, ok := parser.symbol_table["main"]
 	if !ok {
-		pc = 1
+		entry = 1
 	}
 
-	return parser.Program, pc, nil
+	return parser.Program, entry, nil
 }
 
 // Expandes if pseudo instruction then pushes to the program
@@ -421,7 +424,7 @@ func (p *Parser) fillInstructionToken(inst *Instruction, tok Token) error {
 		} else { // Then this is a label call
 			l, ok := p.symbol_table[tok.Value]
 			if ok {
-				val = int32(l - p.inst_count)
+				val = int32(l-p.inst_count) * 4
 			} else {
 				// Add a record to the inst missing label
 				p.insts_missing_label[p.inst_count] = tok.Value
