@@ -163,7 +163,7 @@ func (v *Vm) LoadProgramFromFile(fileName string) error {
 	program, entry_index, err := ParseProgramFromFile(fileName)
 
 	if err == nil {
-		v.SetProgram(program, uint32(entry_index))
+		v.SetProgram(program, entry_index*4)
 	}
 
 	return err
@@ -173,15 +173,15 @@ func (v *Vm) LoadProgramFromStr(program_str string) error {
 	program, entry_index, err := ParseProgramFromString(program_str)
 
 	if err == nil {
-		v.SetProgram(program, uint32(entry_index))
+		v.SetProgram(program, entry_index*4)
 	}
 
 	return err
 }
 
-func (v *Vm) SetProgram(program []Instruction, entry_index uint32) {
-	v._pc_init = entry_index * 4
-	v.Pc = entry_index * 4
+func (v *Vm) SetProgram(program []Instruction, entry_pc uint32) {
+	v._pc_init = entry_pc
+	v.Pc = entry_pc
 	v.program = program
 
 	// Reset the Diagnostics_Manager
