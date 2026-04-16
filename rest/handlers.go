@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/AkifSahn/risc-vm/vm"
 )
@@ -121,16 +122,30 @@ func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm)
 	writeJSON(w, http.StatusOK, GenericResponse{"OK", nil})
 }
 
-// POST /api/session/{id}/step
+// POST /api/session/{id}/step?n
 //
 // Forwards the program by one cycle and returns any updated state.
 // For now, we return the whole state but later we will only return the diff
 func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
-	session.ExecuteCycle()
+	params := r.URL.Query()
+	n_str := params.Get("n")
+	n, err := strconv.Atoi(n_str)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"Url parameter 'n' is not a number!", nil})
+		return
+	}
 
-	data := session.GetState()
 
-	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
+	// Negative 'n' number means execute until halt.
+	// TODO: what if the program contains an infinite loop??
+	states := []vm.Vm_State{}
+	for i := n; i != 0 && !session.Halted; i -= 1 {
+		session.ExecuteCycle()
+		state := session.GetState()
+		states = append(states, state)
+	}
+
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", states})
 }
 
 // --------- Instruction Handlers ---------
