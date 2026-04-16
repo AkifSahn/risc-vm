@@ -49,8 +49,8 @@ func CreateDiagnosticsManager() Diagnostics_Manager {
 }
 
 func (dm *Diagnostics_Manager) CalculateCpi() float32 {
-	if dm.N_cycle <= 0 && dm.N_retired <= 0 {
-		return -1
+	if dm.N_retired <= 0 { // dm.N_cycle <= 0 && dm.N_retired <= 0 {
+		return 0
 	}
 
 	return float32(dm.N_cycle) / float32(dm.N_retired)
