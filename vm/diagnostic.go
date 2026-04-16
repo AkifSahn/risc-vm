@@ -56,6 +56,17 @@ func (dm *Diagnostics_Manager) CalculateCpi() float32 {
 	return float32(dm.N_cycle) / float32(dm.N_retired)
 }
 
+func (dm *Diagnostics_Manager) CalculatePredictionAccuracy() uint {
+	if dm.Bp_enabled {
+		if dm.N_branch <= 0 {
+			return 0
+		} else {
+			return 100 * (dm.N_branch - dm.N_mispred) / dm.N_branch
+		}
+	}
+	return 0
+}
+
 func (dm *Diagnostics_Manager) PrintDiagnostics() {
 	fmt.Println("--- Diagnostics ---")
 	fmt.Printf("%-30s %d\n", "Program size:", dm.Program_size)
@@ -66,15 +77,7 @@ func (dm *Diagnostics_Manager) PrintDiagnostics() {
 	fmt.Printf("%-30s %d\n", "Stalls:", dm.N_stalls)
 	fmt.Printf("%-30s %d\n", "Forwards:", dm.N_forwards)
 
-	if dm.Bp_enabled {
-		if dm.N_branch <= 0 {
-			fmt.Printf("%-30s %s\n", "prediction accuracy:", "No branches")
-		} else {
-			fmt.Printf("%-30s %d%%\n", "prediction accuracy:", 100*(dm.N_branch-dm.N_mispred)/dm.N_branch)
-		}
-	} else {
-		fmt.Printf("%-30s %s\n", "prediction accuracy:", "-")
-	}
+	fmt.Printf("%-30s %v%%\n", "prediction accuracy:", dm.CalculatePredictionAccuracy())
 
 	fmt.Println()
 
