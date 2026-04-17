@@ -27,6 +27,13 @@ type Pipeline_Buffer struct {
 	valid bool
 }
 
+type Control_Buffer struct {
+	branch_target uint32 // The branch target address
+	// TODO: we can instead have a bitflag
+	branch bool // Signaling a branch
+	flush  bool // Signaling a flush
+}
+
 type Vm_Config struct {
 	Mem_size           uint32 // In bytes
 	Stack_size         uint32 // In bytes
@@ -79,10 +86,11 @@ type Vm struct {
 	Memory_diff_addr  []uint32
 	Register_diff_idx []uint8
 
-	_fd_buff [2]Pipeline_Buffer
-	_dx_buff [2]Pipeline_Buffer
-	_xm_buff [2]Pipeline_Buffer
-	_mw_buff [2]Pipeline_Buffer
+	_control_buff [2]Control_Buffer
+	_fd_buff      [2]Pipeline_Buffer
+	_dx_buff      [2]Pipeline_Buffer
+	_xm_buff      [2]Pipeline_Buffer
+	_mw_buff      [2]Pipeline_Buffer
 
 	// Holds the instruction execute cycle numbers.
 	_instCycleTable map[Inst_Op]int
@@ -296,12 +304,23 @@ func (v *Vm) flush() {
 		return
 	}
 
-	// Record the flushed instructions addr in the cycle_info
-	pc := v._fd_buff[0].pc
-	v.cycle_info.Flushed_pc = pc
+	// Record the flushed instructions addresses in the cycle_info
+	pc1 := v._fd_buff[1].pc
+	pc2 := v._dx_buff[1].pc
+	v.cycle_info.Flushed_pcs[0] = pc1
+	v.cycle_info.Flushed_pcs[1] = pc2
 
+	// We also should decrement the busy flag of the 'rd' register if it was set.
+	d_inst := v._dx_buff[1].inst
+	if d_inst._fmt == Fmt_R || d_inst._fmt == Fmt_I || d_inst._fmt == Fmt_U || d_inst._fmt == Fmt_J {
+		v.Registers[d_inst.Rd].Busy -= 1
+	}
+
+	// Drain IF/ID and ID/EX pipeline buffers
 	v._fd_buff[0].valid = false
 	v._fd_buff[1].valid = false
+	v._dx_buff[0].valid = false
+	v._dx_buff[1].valid = false
 }
 
 func (v *Vm) run_fetch() {
@@ -310,8 +329,8 @@ func (v *Vm) run_fetch() {
 		inst = v.program[v.Pc/4]
 	} else {
 		// End of the program, set _halt as true so that execution stops when
-		// the pipeline is drained.
-		// Also, decrement the fetched instruction counter by 1, we don't count this as a fetch
+		// the pipeline is drained. Also, decrement the fetched instruction
+		// counter by 1, we don't count this as a fetch
 		v.Dm.N_fetched -= 1
 		v._halt = true
 		return
@@ -331,10 +350,42 @@ func (v *Vm) run_fetch() {
 		inst._ex_remaining = n
 	}
 
-	// Update the cyle info
+	// Handle the branches, we don't update the pc directly in this stage.
+	// We make a control signal and let the control unit handle it.
 	{
-		v.cycle_info.Stage_pcs[0] = v.Pc
+		// For unconditional branches, we don't need to make prediction we know
+		// they will be always taken. If there is a BTB entry, signal a branch.
+		// If we don't know the address yet, stall until it is known.
+		if inst.isUnconditionalBranch() {
+			if inst.Op == Inst_Jalr {
+				target, valid := v.Bp.getTarget(v.Pc)
+				if valid {
+					v._control_buff[0].branch = true
+					v._control_buff[0].branch_target = target
+				} else {
+					// We don't know the target address yet, stall until for EX stage.
+					v._stall_map |= STALL_BRANCH
+				}
+			}
+		}
+
+		// If this is a conditional branch instruction, make prediction and
+		// signal to the control unit if enabled or stall.
+		if inst.isConditionalBranch() {
+			if v.Config.Bp_enabled {
+				taken, target := v.Bp.predict(v.Pc)
+				if taken {
+					v._control_buff[0].branch = true
+					v._control_buff[0].branch_target = target
+				}
+			} else {
+				v._stall_map |= STALL_BRANCH
+			}
+		}
+
 	}
+
+	v.cycle_info.Stage_pcs[0] = v.Pc
 
 	v._fd_buff[0].inst = inst
 	v._fd_buff[0].pc = v.Pc
@@ -357,23 +408,8 @@ func (v *Vm) run_decode() {
 		v._stall_map &= ^STALL_RAW
 	}
 
-	// If this is a conditional branch instruction,
-	// stall the fetch until the branch addr is calculated or make prediction
-	if inst.isConditionalBranch() {
-		// If branch prediction is enabled, do prediction.
-		// If not, just stall
-		if v.Config.Bp_enabled {
-			taken, target := v.Bp.predict(pc)
-			if taken {
-				v.Pc = target
-			}
-		} else {
-			v._stall_map |= STALL_BRANCH
-		}
-	}
-
 	// Update the cyle info
-	v.cycle_info.Stage_pcs[1] = pc // uint32(pc) - 1
+	v.cycle_info.Stage_pcs[1] = pc
 
 	switch inst._fmt {
 	case Fmt_R:
@@ -414,18 +450,10 @@ func (v *Vm) run_decode() {
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	}
 
-	// For unconditional branches, we don't need to make prediction
-	// we know they will be always taken. If we know the addr in decode, branch immediately.
-	// If we don't know the address yet, stall until it is known.
+	// Well, for indirect unconditional branches. We don't know the inst._imm
+	// yet, so do it in decode stage.
 	if inst.isUnconditionalBranch() {
-		if inst.Op == Inst_Jalr {
-			target, valid := v.Bp.getTarget(pc)
-			if valid {
-				v.Pc = target
-			} else {
-				v._stall_map |= STALL_BRANCH
-			}
-		} else {
+		if inst.Op == Inst_Jal {
 			v.Pc = uint32(int32(pc) + inst._imm)
 		}
 	}
@@ -572,24 +600,26 @@ func (v *Vm) run_execute() {
 		v.Dm.N_branch++
 
 		correct := false
-		// If prediction is enabled, update the predictor and flush if necessary
+		// If prediction is enabled, update the predictor and signal a flush if necessary
 		if v.Config.Bp_enabled {
 			correct = v.Bp.update(pc, branch_target, branch_taken)
 			if !correct {
 				v.Dm.N_mispred++
-				v.flush()
+				v._control_buff[0].flush = true
 			}
 		} else {
 			v._stall_map &= ^STALL_BRANCH
 		}
 
-		// If not, correct do the correct branch
+		// If our prediction was not correct do the correct branch
 		// If BP is not enabled then the 'correct' will stay as false and pc will be updated.
 		if !correct {
+			v._control_buff[0].branch = true
 			if branch_taken {
-				v.Pc = branch_target
+				v._control_buff[0].branch_target = branch_target
 			} else {
-				v.Pc = pc + 4 // Fetch the next instruction
+				// Fetch the next instruction
+				v._control_buff[0].branch_target = pc + 4
 			}
 		}
 	}
@@ -599,8 +629,9 @@ func (v *Vm) run_execute() {
 	// If there was no stall, we don't need to do anything.
 	if inst.Op == Inst_Jalr {
 		if v._stall_map&STALL_BRANCH != 0 {
-			v._stall_map &= ^STALL_BRANCH
-			v.Pc = branch_target
+			// The stall will be resolved by the control unit
+			v._control_buff[0].branch = true
+			v._control_buff[0].branch_target = branch_target
 			v.Bp.update(pc, branch_target, true)
 		}
 	}
@@ -723,6 +754,21 @@ func (v *Vm) run_writeback() {
 
 }
 
+func (v *Vm) run_control() {
+	cb := v._control_buff[1]
+	if cb.branch {
+		// Resolve branch stalls
+		if v._stall_map&STALL_BRANCH != 0 {
+			v._stall_map &= ^STALL_BRANCH
+		}
+		v.Pc = cb.branch_target
+	}
+
+	if cb.flush {
+		v.flush()
+	}
+}
+
 func (v *Vm) RunPipelined() {
 	for !v.Halted {
 		v.ExecuteCycle()
@@ -743,6 +789,8 @@ func (v *Vm) ExecuteCycle() {
 	// Clear the memory and register diff
 	v.Memory_diff_addr = v.Memory_diff_addr[:0]
 	v.Register_diff_idx = v.Register_diff_idx[:0]
+
+	v.run_control()
 
 	if v._mw_buff[1].valid {
 		v.run_writeback()
@@ -816,4 +864,9 @@ func (v *Vm) shiftPipelineBuffers() {
 
 	v._mw_buff[1] = v._mw_buff[0]
 	v._mw_buff[0].valid = false
+
+	// Also shift the control buffer
+	v._control_buff[1] = v._control_buff[0]
+	v._control_buff[0] = Control_Buffer{}
+	// v._control_buff[0].valid = false
 }

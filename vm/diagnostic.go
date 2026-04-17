@@ -22,7 +22,7 @@ const (
 
 type Cycle_Info struct {
 	Stage_pcs        [5]uint32   `json:"stages"`
-	Flushed_pc       uint32      `json:"flushed_instruction"`
+	Flushed_pcs      [2]uint32   `json:"flushed_instructions"`
 	Stalled          bool        `json:"stalled"`
 	S1_bypass_status bypass_type `json:"s1_bypass"`
 	S2_bypass_status bypass_type `json:"s2_bypass"`
