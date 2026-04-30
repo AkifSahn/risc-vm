@@ -633,6 +633,21 @@ func (v *Vm) run_execute() {
 			v._control_buff[0].branch = true
 			v._control_buff[0].branch_target = branch_target
 			v.Bp.update(pc, branch_target, true)
+		} else {
+			// We are checking this because the underlying target for the
+			// 'jalr' can change if the source registers value changes.
+			old_target, valid := v.Bp.getTarget(pc)
+
+			// Do we need to check for valid here?
+			// Not really, but let's check it doesn't hurt.
+			if old_target != branch_target && valid {
+				v._control_buff[0].branch = true
+				v._control_buff[0].branch_target = branch_target
+				v._control_buff[0].flush = true
+
+				// Update the target
+				v.Bp.update(pc, branch_target, true)
+			}
 		}
 	}
 
