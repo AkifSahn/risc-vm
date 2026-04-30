@@ -98,47 +98,69 @@ func TestAllExamples() error {
 
 		f.Close()
 
+		// Different combinations for forwarding and Branch prediction configs
+		forwardingAndBpConfigs := [][2]bool{{false, false}, {false, true}, {true, false}, {true, true}}
+
+		fmt.Printf("'%v:'\n", path)
 		// Create a vm and run the example code on it
-		{
-			vm, err := CreateVm(saved_state.Config)
+		for _, combination := range forwardingAndBpConfigs {
+			forwarding, bp := combination[0], combination[1]
+			cfg, _ := CreateConfig(saved_state.Config.Mem_size, saved_state.Config.Stack_size, saved_state.Config.Bp_nbit, forwarding, bp)
+			vm, err := CreateVm(*cfg)
 			if err != nil {
 				return err
 			}
 
 			err = vm.LoadProgramFromFile(fmt.Sprintf("%s/%s", SOURCE_FOLDER, src_name))
 			if err != nil {
-				fmt.Printf("Failed to load program '%v' for testing. '%v'\n", src_name, err.Error())
+				fmt.Printf("\tFailed to load program '%v' for testing. '%v'\n", src_name, err.Error())
 				return nil
 			}
 
 			vm.RunPipelined()
 
-			var errors []string
+			var memoryErrs []string
+			var registerErrs []string
 			if slices.Compare(vm.Memory, saved_state.Memory) != 0 {
-				errors = append(errors, "Memories does not match")
+				memoryErrs = append(memoryErrs, "Memories does not match")
 			}
 
 			for i, reg := range vm.Registers {
 				if saved_state.Registers[i].Data != reg.Data || saved_state.Registers[i].Busy != reg.Busy {
-					errors = append(errors, "Registers does not match")
-					break
+					msg := fmt.Sprintf("0x%v %v != %v", i, reg, saved_state.Registers[i])
+					registerErrs = append(registerErrs, msg)
 				}
 			}
 
-			if len(errors) > 0 {
-				fmt.Printf("\033[0;31mFAIL\033[0m '%v' --- [", path)
-				for i, err := range errors {
-					fmt.Printf("'%v'", err)
-					if i < len(errors) - 1{
+			if len(memoryErrs) > 0 || len(registerErrs) > 0 {
+				fmt.Printf("\t\033[0;31mFAIL\033[0m 'Forwarding: %v, BP: %v'\n", forwarding, bp)
+			}
+
+			if len(memoryErrs) > 0 {
+				fmt.Printf("\tMemories does not match [\n")
+				for i, err := range memoryErrs {
+					fmt.Printf("\t\t'%v'", err)
+					if i < len(memoryErrs)-1 {
 						fmt.Printf(", ")
 					}
 				}
-				fmt.Printf("]\n")
-				return nil
+				fmt.Printf("\n\t]\n")
 			}
-		}
 
-		fmt.Printf("\033[0;32mPASS\033[0m '%v'\n", path)
+			if len(registerErrs) > 0 {
+				fmt.Printf("\tRegisters does not match [\n")
+				for i, err := range registerErrs {
+					fmt.Printf("\t\t'%v'", err)
+					if i < len(registerErrs)-1 {
+						fmt.Printf("\n")
+					}
+				}
+				fmt.Printf("\n\t]\n")
+			}
+
+			fmt.Printf("\t\033[0;32mPASS\033[0m 'Forwarding: %v, BP: %v'\n", forwarding, bp)
+		}
+		fmt.Println("================================")
 		return err
 	})
 
