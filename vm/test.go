@@ -104,6 +104,8 @@ func TestAllExamples() error {
 		fmt.Printf("'%v:'\n", path)
 		// Create a vm and run the example code on it
 		for _, combination := range forwardingAndBpConfigs {
+			failed := false;
+
 			forwarding, bp := combination[0], combination[1]
 			cfg, _ := CreateConfig(saved_state.Config.Mem_size, saved_state.Config.Stack_size, saved_state.Config.Bp_nbit, forwarding, bp)
 			vm, err := CreateVm(*cfg)
@@ -134,6 +136,7 @@ func TestAllExamples() error {
 
 			if len(memoryErrs) > 0 || len(registerErrs) > 0 {
 				fmt.Printf("\t\033[0;31mFAIL\033[0m 'Forwarding: %v, BP: %v'\n", forwarding, bp)
+				failed = true
 			}
 
 			if len(memoryErrs) > 0 {
@@ -158,7 +161,9 @@ func TestAllExamples() error {
 				fmt.Printf("\n\t]\n")
 			}
 
-			fmt.Printf("\t\033[0;32mPASS\033[0m 'Forwarding: %v, BP: %v'\n", forwarding, bp)
+			if !failed {
+				fmt.Printf("\t\033[0;32mPASS\033[0m 'Forwarding: %v, BP: %v'\n", forwarding, bp)
+			}
 		}
 		fmt.Println("================================")
 		return err
