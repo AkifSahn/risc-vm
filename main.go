@@ -20,6 +20,9 @@ func main() {
 
 	filename := flag.String("file", "", "assembly file to run.")
 
+	branch_prediction := flag.Bool("bp", true, "Enable/disable branch prediction.")
+	forwarding := flag.Bool("forwarding", true, "Enable/disable data forwarding.")
+
 	mem_size := flag.Uint("mem", MEM_SIZE, "Simulator memory size in bytes.")
 
 	list_cycles := flag.Bool("list-cycles", false, "List cycle-by-cycle stages.")
@@ -51,7 +54,7 @@ func main() {
 		return
 	}
 
-	config, err := vm.CreateConfig(uint32(*mem_size), STACK_SIZE, 2, true, true)
+	config, err := vm.CreateConfig(uint32(*mem_size), STACK_SIZE, 2, *forwarding, *branch_prediction)
 	if err != nil {
 		fmt.Printf("Configuration error: %s\n", err.Error())
 		os.Exit(1)
