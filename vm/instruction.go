@@ -92,11 +92,13 @@ type Instruction struct {
 	Rs1 int32
 	Rs2 int32
 
-	_s1           int32
-	_s2           int32
-	_imm          int32
-	_result       int32
-	_fmt          Inst_Fmt
+	_s1     int32
+	_s2     int32
+	_imm    int32
+	_result int32
+	_fmt    Inst_Fmt
+
+	_ex_total     int // Total number of execute stages for this instruction
 	_ex_remaining int // Number of executions remaining
 }
 
@@ -202,7 +204,7 @@ func (inst Instruction) isConditionalBranch() bool {
 	return false
 }
 
-func (inst Instruction) isBranch() bool{
+func (inst Instruction) isBranch() bool {
 	return inst.isConditionalBranch() || inst.isUnconditionalBranch()
 }
 
@@ -287,4 +289,3 @@ func expandPseudoInstruction(ps Instruction) Instruction {
 		return ps
 	}
 }
-

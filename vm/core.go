@@ -348,6 +348,7 @@ func (v *Vm) run_fetch() {
 			n = 1 // Default number of cycles in ex is 1
 		}
 		inst._ex_remaining = n
+		inst._ex_total = n
 	}
 
 	// Handle the branches, we don't update the pc directly in this stage.
@@ -470,23 +471,14 @@ func (v *Vm) run_execute() {
 	// Update the cyle info
 	v.cycle_info.Stage_pcs[2] = pc
 
-	inst._ex_remaining--
-
-	// Handle multi cycle instructions
-	// Feed the read buffer back to write if need more cycles to execute
-	if inst._ex_remaining > 0 {
-		v._dx_buff[0] = v._dx_buff[1]
-		v._dx_buff[0].inst._ex_remaining = inst._ex_remaining // Propagate the ex_remaining
-		v._dx_buff[0].valid = true
-		return
-	}
-
-	var s1, s2 int32
-
 	// Get the source values either from bypass or use the one loaded from RF
-	{
+	// If this is a multi-cycle execute instruction, we need to get the ALU
+	// inputs in the first cycle!!
+	if inst._ex_remaining == inst._ex_total {
 		var ok bool
 		var t bypass_type
+
+		var s1, s2 int32
 
 		rs1, rs2 := inst.getAluInputRegisters()
 
@@ -503,13 +495,29 @@ func (v *Vm) run_execute() {
 			s2 = inst._s2
 		}
 
+		inst._s1 = s1
+		inst._s2 = s2
+
 		// Update cycle info
 		v.cycle_info.S2_bypass_status = t
+	}
+
+	inst._ex_remaining--
+
+	// Handle multi cycle instructions
+	// Feed the read buffer back to write if need more cycles to execute
+	if inst._ex_remaining > 0 {
+		v._dx_buff[0] = v._dx_buff[1]
+		v._dx_buff[0].inst = inst // Propagate the instruction
+		v._dx_buff[0].valid = true
+		return
 	}
 
 	// Only used if a branch instruction
 	var branch_target uint32
 	var branch_taken bool
+
+	s1, s2 := inst._s1, inst._s2
 
 	switch inst.Op {
 	/* R-Type */
@@ -607,8 +615,6 @@ func (v *Vm) run_execute() {
 				v.Dm.N_mispred++
 				v._control_buff[0].flush = true
 			}
-		} else {
-			v._stall_map &= ^STALL_BRANCH
 		}
 
 		// If our prediction was not correct do the correct branch
