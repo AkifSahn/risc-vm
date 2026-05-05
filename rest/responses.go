@@ -1,9 +1,6 @@
 package rest
 
 import (
-	"encoding/json"
-	"net/http"
-
 	"github.com/AkifSahn/risc-vm/vm"
 )
 
@@ -26,22 +23,4 @@ type ProgramResponse struct {
 
 type ListInstructionsResponse struct {
 	Instructions []string `json:"instructions"`
-}
-
-type GenericResponse struct {
-	Message string `json:"message"`
-	Data    any    `json:"data"`
-}
-
-func NewGenericResponse(msg string, data any) GenericResponse {
-	return GenericResponse{
-		Message: msg,
-		Data:    data,
-	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
 }

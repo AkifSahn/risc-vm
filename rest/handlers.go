@@ -37,23 +37,23 @@ func SetupRoutes() *http.ServeMux {
 func newSessionHandler(w http.ResponseWriter, r *http.Request) {
 	var req UpdateConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{"Invalid request body!", nil})
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, "Invalid request body!"})
 		return
 	}
 
 	config, err := vm.CreateConfig(req.MemorySize, req.MemorySize, req.PredictorBit, req.Forwarding, req.PredictorBit > 0)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{err.Error(), nil})
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, err.Error()})
 	}
 
 	id, err := newSession(*config)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{err.Error(), nil})
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, err.Error()})
 		return
 	}
 
 	data := NewSessionResponse{Id: id}
-	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", data, ""})
 }
 
 // GET /api/session
@@ -67,7 +67,8 @@ func getSessionHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, ok := sessions[id]
 	if !ok {
-		http.Error(w, fmt.Sprintf("Session not found! 'id=%s'", id), http.StatusNotFound)
+		s := fmt.Sprintf("Session not found! 'id=%s'", id)
+		writeJSON(w, http.StatusNotFound, GenericResponse{"", nil, s})
 		return
 	}
 
@@ -79,7 +80,7 @@ func getSessionHandler(w http.ResponseWriter, r *http.Request) {
 func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
 	var req LoadProgramRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{"Invalid request body!", nil})
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, "Invalid request body!"})
 		return
 	}
 
@@ -87,7 +88,8 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 	session.Reset(session.Config)
 	err := session.LoadProgramFromStr(req.ProgramStr)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{fmt.Sprintf("Failed to parse: %v", err.Error()), nil})
+		s := fmt.Sprintf("Failed to parse: %v", err.Error())
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, s})
 		return
 	}
 
@@ -98,28 +100,26 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 		Program: prog_str[1:],
 	}
 
-	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", data, ""})
 }
 
 func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
 	var req UpdateConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{"Invalid request body!", nil})
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, "Invalid request body!"})
 		return
 	}
 
 	config, err := vm.CreateConfig(req.MemorySize, req.MemorySize, req.PredictorBit, req.Forwarding, req.PredictorBit > 0)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{
-			fmt.Sprintf("Failed to update config: %v", err.Error()),
-			nil,
-		})
+		s := fmt.Sprintf("Failed to update config: %v", err.Error())
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, s})
 		return
 	}
 
 	session.Reset(*config)
 
-	writeJSON(w, http.StatusOK, GenericResponse{"OK", nil})
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", nil, ""})
 }
 
 // POST /api/session/{id}/step?n
@@ -131,10 +131,9 @@ func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 	n_str := params.Get("n")
 	n, err := strconv.Atoi(n_str)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, GenericResponse{"Url parameter 'n' is not a number!", nil})
+		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, "Url parameter 'n' is not a number!"})
 		return
 	}
-
 
 	// Negative 'n' number means execute until halt.
 	// TODO: what if the program contains an infinite loop??
@@ -145,7 +144,12 @@ func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 		states = append(states, state)
 	}
 
-	writeJSON(w, http.StatusOK, GenericResponse{"OK", states})
+	if session.Runtime_error != nil {
+		writeJSON(w, http.StatusOK, GenericResponse{"", states, session.Runtime_error.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", states, ""})
 }
 
 // --------- Instruction Handlers ---------
@@ -154,5 +158,5 @@ func getInstructionList(w http.ResponseWriter, r *http.Request) {
 	insts := vm.GetInstructionStringList()
 
 	data := ListInstructionsResponse{Instructions: insts}
-	writeJSON(w, http.StatusOK, GenericResponse{"OK", data})
+	writeJSON(w, http.StatusOK, GenericResponse{"OK", data, ""})
 }
