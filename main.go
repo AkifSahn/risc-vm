@@ -72,7 +72,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	machine.RunPipelined()
+	runtime_err := machine.RunPipelined()
+	if runtime_err != nil {
+		fmt.Printf("ERORR: %v\n", runtime_err.Error())
+		return
+	}
 
 	if *save_test {
 		err := machine.SaveTestState(*filename)

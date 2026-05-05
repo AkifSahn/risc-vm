@@ -2,7 +2,6 @@ package vm
 
 import (
 	"fmt"
-	"log"
 )
 
 const (
@@ -27,11 +26,16 @@ type Pipeline_Buffer struct {
 	valid bool
 }
 
+type Control_Signal uint32
+
+const (
+	CONTROL_BRANCH Control_Signal = 1 << iota
+	CONTROL_FLUSH
+)
+
 type Control_Buffer struct {
-	branch_target uint32 // The branch target address
-	// TODO: we can instead have a bitflag
-	branch bool // Signaling a branch
-	flush  bool // Signaling a flush
+	branch_target uint32
+	flags         Control_Signal
 }
 
 type Vm_Config struct {
@@ -99,6 +103,8 @@ type Vm struct {
 	// Each stall is same in principle, but their cause may be different.
 	_stall_map byte
 
+	Runtime_error error
+
 	Halted bool // Only gets set when the program is fully stopped and no longer executing.
 	_halt  bool // internal control flag to indicate that program will end when the pipeline is drained.
 }
@@ -112,7 +118,6 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 		Config:  config,
 	}
 
-	// TODO: Is this good?
 	vm.Dm.Forwarding_enabled = config.Forwarding_enabled
 	vm.Dm.Bp_enabled = config.Bp_enabled
 
@@ -120,12 +125,10 @@ func CreateVm(config Vm_Config) (*Vm, error) {
 	vm.Registers[abiToRegNum["sp"]].Data = int32(config.Mem_size)
 
 	// Fill the instCycleTable to default values
-	{
-		vm._instCycleTable = map[Inst_Op]int{
-			Inst_Mul: 3,
-			Inst_Div: 3,
-			Inst_Rem: 3,
-		}
+	vm._instCycleTable = map[Inst_Op]int{
+		Inst_Mul: 3,
+		Inst_Div: 3,
+		Inst_Rem: 3,
 	}
 
 	return &vm, nil
@@ -297,7 +300,7 @@ func (v *Vm) shouldStallDecode(inst Instruction) bool {
 
 // flushes the IF/ID and ID/EX pipeline buffers
 func (v *Vm) flush() {
-	// If we are flushing and 'end' instruction, reverse the halt since the
+	// If we are flushing an 'end' instruction, reverse the halt since the
 	// 'end' instruction is not in the pipeline, we should not flush the buffers
 	if v._halt {
 		v._halt = false
@@ -361,7 +364,7 @@ func (v *Vm) run_fetch() {
 			if inst.Op == Inst_Jalr {
 				target, valid := v.Bp.getTarget(v.Pc)
 				if valid {
-					v._control_buff[0].branch = true
+					v._control_buff[0].flags |= CONTROL_BRANCH
 					v._control_buff[0].branch_target = target
 				} else {
 					// We don't know the target address yet, stall until for EX stage.
@@ -376,7 +379,7 @@ func (v *Vm) run_fetch() {
 			if v.Config.Bp_enabled {
 				taken, target := v.Bp.predict(v.Pc)
 				if taken {
-					v._control_buff[0].branch = true
+					v._control_buff[0].flags |= CONTROL_BRANCH
 					v._control_buff[0].branch_target = target
 				}
 			} else {
@@ -613,14 +616,14 @@ func (v *Vm) run_execute() {
 			correct = v.Bp.update(pc, branch_target, branch_taken)
 			if !correct {
 				v.Dm.N_mispred++
-				v._control_buff[0].flush = true
+				v._control_buff[0].flags |= CONTROL_FLUSH
 			}
 		}
 
 		// If our prediction was not correct do the correct branch
 		// If BP is not enabled then the 'correct' will stay as false and pc will be updated.
 		if !correct {
-			v._control_buff[0].branch = true
+			v._control_buff[0].flags |= CONTROL_BRANCH
 			if branch_taken {
 				v._control_buff[0].branch_target = branch_target
 			} else {
@@ -636,7 +639,7 @@ func (v *Vm) run_execute() {
 	if inst.Op == Inst_Jalr {
 		if v._stall_map&STALL_BRANCH != 0 {
 			// The stall will be resolved by the control unit
-			v._control_buff[0].branch = true
+			v._control_buff[0].flags |= CONTROL_BRANCH
 			v._control_buff[0].branch_target = branch_target
 			v.Bp.update(pc, branch_target, true)
 		} else {
@@ -647,9 +650,9 @@ func (v *Vm) run_execute() {
 			// Do we need to check for valid here?
 			// Not really, but let's check it doesn't hurt.
 			if old_target != branch_target && valid {
-				v._control_buff[0].branch = true
+				v._control_buff[0].flags |= CONTROL_BRANCH
 				v._control_buff[0].branch_target = branch_target
-				v._control_buff[0].flush = true
+				v._control_buff[0].flags |= CONTROL_FLUSH
 
 				// Update the target
 				v.Bp.update(pc, branch_target, true)
@@ -662,18 +665,27 @@ func (v *Vm) run_execute() {
 	v._xm_buff[0].valid = true
 }
 
-// Store n bytes of data at the memory addr.
-// Addr must be aligned by n.
 func (v *Vm) memoryWrite(data int32, addr uint32, n uint8) {
 	if addr%uint32(n) != 0 {
-		log.Printf("ERROR - Illegal write attempt to unaligned memory address: '%v'."+
-			"Each word adress must be aligned by '%v'", addr, n)
-		v._halt = true
+		err := fmt.Errorf("Illegal write attempt to unaligned memory address:"+
+			"'%v'. Must align by '%v'", addr, n)
+		v.Runtime_error = err
+
+		// v._halt = true
 		return
 	}
 
 	u := uint32(data)
 	for i := range uint32(n) {
+		// Check if addr+i is out of bounds
+		// We are not checking addr + i < 0 because addr is unsigned and negative values wrap around.
+		if addr+i >= v.Config.Mem_size {
+			err := fmt.Errorf("Illegal write attempt to out of bound memory address:"+
+				"'%v'. Maximum writeable memory address is '%v'!", addr, v.Config.Mem_size-1)
+			v.Runtime_error = err
+			return
+		}
+
 		v.Memory[addr+i] = byte(u)
 		u >>= 8
 
@@ -681,21 +693,25 @@ func (v *Vm) memoryWrite(data int32, addr uint32, n uint8) {
 	}
 }
 
-// Reads n bytes from memory addr
-// Addr must be aligned by n.
-// Returns the read data.
 func (v *Vm) memoryRead(addr uint32, n uint8) int32 {
 	if addr%uint32(n) != 0 {
-		log.Printf("Illegal read attempt from unaligned memory address: '%d'."+
-			"Each word adress must be aligned by '%d'", addr, WORD_SIZE)
-		// TODO: _halt waits for the pipeline to drain
-		// this is an error, we should immediately halt in this case.
+		err := fmt.Errorf("Illegal read attempt from unaligned memory address:"+
+			"'%v'. Must align by '%v'", addr, n)
+		v.Runtime_error = err
+
 		v._halt = true
 		return 0
 	}
 
 	var u uint32
 	for i := range uint32(n) {
+		if addr+i >= v.Config.Mem_size {
+			err := fmt.Errorf("Illegal read attempt from out of bound memory address:"+
+				"'%v'. Maximum readable memory address is '%v'!", addr, v.Config.Mem_size-1)
+			v.Runtime_error = err
+			return 0
+		}
+
 		u |= uint32(v.Memory[addr+i]) << (i * 8)
 	}
 
@@ -777,7 +793,7 @@ func (v *Vm) run_writeback() {
 
 func (v *Vm) run_control() {
 	cb := v._control_buff[1]
-	if cb.branch {
+	if cb.flags&CONTROL_BRANCH > 0 {
 		// Resolve branch stalls
 		if v._stall_map&STALL_BRANCH != 0 {
 			v._stall_map &= ^STALL_BRANCH
@@ -785,25 +801,27 @@ func (v *Vm) run_control() {
 		v.Pc = cb.branch_target
 	}
 
-	if cb.flush {
+	if cb.flags&CONTROL_FLUSH > 0 {
 		v.flush()
 	}
 }
 
-func (v *Vm) RunPipelined() {
+func (v *Vm) RunPipelined() error {
 	for !v.Halted {
 		v.ExecuteCycle()
 	}
+
+	return v.Runtime_error
+	// if v.Runtime_error != nil {
+	// 	fmt.Printf("ERROR: %v", v.Runtime_error.Error())
+	// }
+
 }
 
-// In pipelined fashion, we may execute multiple pipeline stage
-// For example, in a single cycle the processor could run: EX, D and F
-// each belonging to different instructions.
-//
-// This functions does exactly that, each stage has it's own instruction.
-// At the end of each cycle, instructions moves to the next stage in the pipeline.
 func (v *Vm) ExecuteCycle() {
 	v.Dm.N_cycle++
+
+	v.Runtime_error = nil
 
 	v.cycle_info = Cycle_Info{}
 
@@ -856,6 +874,12 @@ func (v *Vm) ExecuteCycle() {
 
 	v.shiftPipelineBuffers()
 
+	// Check for runtime error
+	if v.Runtime_error != nil {
+		v.Halted = true
+		return
+	}
+
 	// If v._halt is set and the pipeline buffers are drained then program is ended.
 	if v._halt && !v._fd_buff[1].valid && !v._dx_buff[1].valid && !v._xm_buff[1].valid && !v._mw_buff[1].valid {
 		v.Halted = true
@@ -889,5 +913,4 @@ func (v *Vm) shiftPipelineBuffers() {
 	// Also shift the control buffer
 	v._control_buff[1] = v._control_buff[0]
 	v._control_buff[0] = Control_Buffer{}
-	// v._control_buff[0].valid = false
 }
