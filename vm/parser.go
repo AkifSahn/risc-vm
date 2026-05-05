@@ -129,6 +129,9 @@ type Token_Type uint16
 const (
 	Tok_End Token_Type = iota
 	Tok_Colon
+	Tok_Comma
+	Tok_OpenParen
+	Tok_CloseParen
 
 	Tok_Number
 	Tok_Symbol
@@ -168,14 +171,18 @@ func isSymbol(b byte) bool {
 
 // TODO: Check if paranthesis are valid
 // We consider params and ',' as a space
-func (l *Lexer) isSpace(ch rune) bool {
-	return unicode.IsSpace(ch) || ch == '(' || ch == ')' || ch == ',' || ch == ';'
+func isSpace(ch rune) bool {
+	return unicode.IsSpace(ch) || ch == ';' // || ch == ',' || ch == '(' || ch == ')'
+}
+
+func isSeperator(ch rune) bool {
+	return unicode.IsSpace(ch) || ch == ',' || ch == '(' || ch == ')'
 }
 
 // If cursor goes to a newline returns true, otherwise false
 func (l *Lexer) trimSpace() bool {
 	newLine := false
-	for int(l.Cursor) < len(l.Content) && l.isSpace(rune(l.Content[l.Cursor])) {
+	for int(l.Cursor) < len(l.Content) && isSpace(rune(l.Content[l.Cursor])) {
 		if l.Content[l.Cursor] == ';' {
 			for int(l.Cursor) < len(l.Content) && l.Content[l.Cursor] != '\n' {
 				l.Cursor++
@@ -196,8 +203,18 @@ func (l *Lexer) trimSpace() bool {
 	return newLine
 }
 
+func (l *Lexer) expectAndConsumeToken(tok_type Token_Type) (bool, Token) {
+	tok := l.nextToken()
+	if tok.Type != tok_type {
+		return false, tok
+	}
+
+	return true, tok
+}
+
 func (l Lexer) peekNextToken() Token {
 	tok := l.nextToken()
+
 	return tok
 }
 
@@ -237,10 +254,10 @@ func (l *Lexer) nextToken() Token {
 		l.Cursor++
 
 		tok.Type = Tok_Number
-		for int(l.Cursor) < len(l.Content) && !l.isSpace(rune(l.Content[l.Cursor])) {
+		for int(l.Cursor) < len(l.Content) && !isSeperator(rune(l.Content[l.Cursor])) {
 
 			// If any character after the first digit is not a digit, this is not a valid number
-			// We still want to get the whole token until a space character
+			// We still want to get the whole token until a seperator character
 			// for reporting the whole word as an Tok_Invalid
 			if !unicode.IsDigit(rune(l.Content[l.Cursor])) {
 				tok.Type = Tok_Invalid
@@ -267,6 +284,32 @@ func (l *Lexer) nextToken() Token {
 		return tok
 	}
 
+	if l.Content[l.Cursor] == '(' {
+		tok.Type = Tok_OpenParen
+		tok.Value = "("
+		l.Cursor++
+
+		// We don't increment the tok_num for the seperators
+		// l.tok_num++
+		return tok
+	}
+
+	if l.Content[l.Cursor] == ')' {
+		tok.Type = Tok_CloseParen
+		tok.Value = ")"
+		l.Cursor++
+
+		return tok
+	}
+
+	if l.Content[l.Cursor] == ',' {
+		tok.Type = Tok_Comma
+		tok.Value = ","
+		l.Cursor++
+
+		return tok
+	}
+
 	tok.Type = Tok_Invalid
 	tok.Value = string(l.Content[l.Cursor])
 
@@ -279,6 +322,7 @@ func (l *Lexer) nextToken() Token {
 // ====================================
 
 type Parser struct {
+	lexer      *Lexer
 	inst_count uint32
 
 	// Symbol table holding label_str -> line_num
@@ -311,49 +355,46 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 
 	lexer := Lexer{}
 	lexer.Content = program_str
+	parser.lexer = &lexer
 
-	inst := Instruction{}
+	// inst := Instruction{}
 	tok := lexer.nextToken()
 	for tok.Type != Tok_End {
 		if tok.Type == Tok_Invalid {
-			return nil, 0, fmt.Errorf("%v:%v Invalid token '%v'", tok.line_num, tok.start+1, tok.Value)
+			return nil, 0, fmt.Errorf("%v:%v Invalid token '%v'", tok.line_num+1, tok.start+1, tok.Value)
 		}
 
 		// First token of line MUST be a symbol
 		if tok.num == 0 && tok.Type != Tok_Symbol {
-			return nil, 0, fmt.Errorf("%v:%v Expected 'symbol', got '%v'", tok.line_num, tok.start+1, tok.Value)
+			return nil, 0, fmt.Errorf("%v:%v Expected 'symbol', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
 		}
 
 		next := lexer.peekNextToken()
-		switch tok.Type {
-		case Tok_Symbol:
-			if next.Type == Tok_Colon { // If the next token is ':', this is a label declaration.
+		if tok.Type == Tok_Symbol {
+			if next.Type == Tok_Colon {
 				parser.symbol_table[tok.Value] = parser.inst_count
 			} else {
-				err := parser.fillInstructionToken(&inst, tok)
+
+				ok, op := isOpcodeToken(tok)
+				if !ok {
+					return nil, 0, fmt.Errorf("%v:%v Expected 'opcode' got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+				}
+
+				inst, err := parser.parseInstruction(op)
 				if err != nil {
 					return nil, 0, err
 				}
-			}
 
-		case Tok_Number:
-			err := parser.fillInstructionToken(&inst, tok)
-			if err != nil {
-				return nil, 0, err
+				parser.pushInstruction(inst)
 			}
 		}
-
-		// Next token is in another line, push the instruction
-		if (next.num == 0 || next.Type == Tok_End) && inst != (Instruction{}) {
-			// Push the previous instruction
-			parser.pushInstruction(inst)
-			inst = Instruction{}
-		}
-
-		// fmt.Printf("%v %v:%v %v\n", tok.num, tok.line_num+1, tok.start+1, tok.Value)
 
 		tok = lexer.nextToken()
 	}
+
+	// for i, inst := range parser.Program {
+	// 	fmt.Printf("%v: %v\n", i, inst.Str())
+	// }
 
 	// Fill the missing label calls
 	for n, label := range parser.insts_missing_label {
@@ -393,58 +434,333 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 // Expandes if pseudo instruction then pushes to the program
 // Returns the pushed instruction
 func (p *Parser) pushInstruction(inst Instruction) Instruction {
-	inst = expandPseudoInstruction(inst)
-	inst._fmt = getInstructionFmt(inst)
+	// inst = expandPseudoInstruction(inst)
+	// inst._fmt = getInstructionFmt(inst)
 	p.Program = append(p.Program, inst)
 	p.inst_count++
 	return inst
 }
 
-func (p *Parser) fillInstructionToken(inst *Instruction, tok Token) error {
-	if tok.num == 0 {
-		op := stringToOpcode(tok.Value)
-		if op == _Inst_Unknown {
-			return fmt.Errorf("%v:%v Unknown opcode '%v'\n", tok.line_num, tok.start, tok.Value)
+func (p *Parser) parseInstruction(op Inst_Op) (Instruction, error) {
+	lexer := *p.lexer
+	_ = lexer
+
+	inst := Instruction{}
+	inst.Op = op
+
+	// we can fill out the inst._fmt
+	inst._fmt = getInstructionFmt(inst)
+
+	var err error
+	switch inst._fmt {
+	// opcode reg, reg, reg
+	case Fmt_R:
+		err = p.parseRType(&inst)
+	case Fmt_U:
+		err = p.parseUType(&inst)
+	// opcode reg, reg, imm
+	case Fmt_I:
+		// TODO: this is a hack. Make it proper!!
+		if inst.isLoad(){
+			err = p.parseSType(&inst)
+		}else{
+			err = p.parseIType(&inst)
 		}
+	// opcode reg, reg, label
+	case Fmt_B:
+		err = p.parseBType(&inst)
+	// opcode reg, label
+	case Fmt_J:
+		err = p.parseJType(&inst)
+	// opcode reg, imm(reg)
+	case Fmt_S:
+		err = p.parseSType(&inst)
 
-		inst.Op = op
-		return nil
-	}
-
-	if inst == nil {
-		return nil
-	}
-
-	var val int32
-	switch tok.Type {
-	case Tok_Symbol: // Register name or label call
-		reg, ok := abiToRegNum[tok.Value]
-		if ok {
-			val = int32(reg)
-		} else { // Then this is a label call
-			l, ok := p.symbol_table[tok.Value]
-			if ok {
-				val = int32(l-p.inst_count) * 4
-			} else {
-				// Add a record to the inst missing label
-				p.insts_missing_label[p.inst_count] = tok.Value
+	// opcode ...
+	case _Fmt_Pseudo:
+		switch inst.Op {
+		// opcode reg, reg
+		case Inst_Mv, Inst_Not, Inst_Neg:
+			reg, err := p.parseRegisterSymbol()
+			if err != nil {
+				return inst, err
 			}
+			ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+			if !ok {
+				return inst, fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+			}
+			inst.Rd = int32(reg)
+
+			reg, err = p.parseRegisterSymbol()
+			if err != nil {
+				return inst, err
+			}
+			inst.Rs1 = int32(reg)
+
+		// opcode reg, imm
+		case Inst_Li:
+			reg, err := p.parseRegisterSymbol()
+			if err != nil {
+				return inst, err
+			}
+			ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+			if !ok {
+				return inst, fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+			}
+			inst.Rd = int32(reg)
+
+			imm, err := p.parseImmedieateValue()
+			if err != nil {
+				return inst, err
+			}
+			inst.Rs1 = imm
+
+		// opcode label
+		case Inst_J, Inst_Call:
+			val, err := p.parseLabelSymbol()
+			if err != nil {
+				return inst, err
+			}
+			inst.Rd = val
+
+		// opcode reg
+		case Inst_Jr:
+			reg, err := p.parseRegisterSymbol()
+			if err != nil {
+				return inst, err
+			}
+			inst.Rd = reg
+
+		// opcode reg, reg, label
+		case Inst_Ble, Inst_Bgt:
+			p.parseBType(&inst)
+
+		// Inst_Ret
+		case Inst_Ret:
+			break
 		}
-	case Tok_Number:
-		num, _ := strconv.Atoi(tok.Value)
-		val = int32(num)
+
+		inst = expandPseudoInstruction(inst)
+		inst._fmt = getInstructionFmt(inst)
+	default:
+		panic(fmt.Sprintf("unexpected vm.Inst_Fmt: %#v", inst._fmt))
 	}
 
-	switch tok.num {
-	case 1: // Rd
-		inst.Rd = val
-	case 2: // Rs1
-		inst.Rs1 = val
-	case 3: // Rs2
-		inst.Rs2 = val
-	default:
-		return fmt.Errorf("%v:%v Unexpected token '%v'\n", tok.line_num, tok.start, tok.Value)
+	return inst, err
+}
+
+func (p *Parser) parseRType(inst *Instruction) error {
+	reg, err := p.parseRegisterSymbol()
+	if err != nil {
+		return err
 	}
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rd = int32(reg)
+
+	reg, err = p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok = p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rs1 = int32(reg)
+
+	reg, err = p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	inst.Rs2 = int32(reg)
 
 	return nil
+}
+
+func (p *Parser) parseIType(inst *Instruction) error {
+	reg, err := p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rd = int32(reg)
+
+	reg, err = p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok = p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rs1 = int32(reg)
+
+	imm, err := p.parseImmedieateValue()
+	if err != nil {
+		return err
+	}
+	inst.Rs2 = imm
+
+	return nil
+}
+
+func (p *Parser) parseBType(inst *Instruction) error {
+	reg, err := p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rd = int32(reg)
+
+	reg, err = p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok = p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rs1 = int32(reg)
+
+	val, err := p.parseLabelSymbol()
+	if err != nil {
+		return err
+	}
+	inst.Rs2 = val
+
+	return nil
+}
+
+func (p *Parser) parseJType(inst *Instruction) error {
+	reg, err := p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rd = int32(reg)
+
+	val, err := p.parseLabelSymbol()
+	if err != nil {
+		return err
+	}
+	inst.Rs1 = val
+
+	return nil
+}
+
+func (p *Parser) parseSType(inst *Instruction) error {
+	reg, err := p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rd = int32(reg)
+
+	imm, err := p.parseImmedieateValue()
+	if err != nil {
+		return err
+	}
+	ok, tok = p.lexer.expectAndConsumeToken(Tok_OpenParen)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected '(', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rs1 = imm
+
+	reg, err = p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok = p.lexer.expectAndConsumeToken(Tok_CloseParen)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ')', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rs2 = int32(reg)
+
+	return nil
+
+}
+
+func (p *Parser) parseUType(inst *Instruction) error {
+	// opcode, reg, imm
+	reg, err := p.parseRegisterSymbol()
+	if err != nil {
+		return err
+	}
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Comma)
+	if !ok {
+		return fmt.Errorf("%v:%v Expected ',', got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+	inst.Rd = int32(reg)
+
+	imm, err := p.parseImmedieateValue()
+	if err != nil {
+		return err
+	}
+	inst.Rs1 = imm
+	return nil
+}
+
+func (p *Parser) parseLabelSymbol() (int32, error) {
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Symbol)
+	if !ok {
+		return 0, fmt.Errorf("%v:%v Expected a label, got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+
+	l, ok := p.symbol_table[tok.Value]
+	if ok {
+		val := int32(l-p.inst_count) * 4
+		return val, nil
+	} else {
+		// Add a record to the inst missing label
+		p.insts_missing_label[p.inst_count] = tok.Value
+		return 0, nil
+	}
+}
+
+func (p *Parser) parseRegisterSymbol() (int32, error) {
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Symbol)
+	if !ok {
+		return 0, fmt.Errorf("%v:%v Expected a register, got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+
+	reg, ok := abiToRegNum[tok.Value]
+	if !ok {
+		return 0, fmt.Errorf("%v:%v Expected a register, got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+
+	return int32(reg), nil
+}
+
+func (p *Parser) parseImmedieateValue() (int32, error) {
+	ok, tok := p.lexer.expectAndConsumeToken(Tok_Number)
+	if !ok {
+		return 0, fmt.Errorf("%v:%v Expected an immediate value, got '%v'", tok.line_num+1, tok.start+1, tok.Value)
+	}
+
+	num, _ := strconv.Atoi(tok.Value)
+
+	return int32(num), nil
+}
+
+func isOpcodeToken(tok Token) (bool, Inst_Op) {
+	if tok.Type != Tok_Symbol {
+		return false, _Inst_Unknown
+	}
+
+	op := stringToOpcode(tok.Value)
+	return op != _Inst_Unknown, op
 }

@@ -16,6 +16,8 @@ const (
 	Fmt_B          // branch
 	Fmt_U          // Upper immediate
 	Fmt_J
+
+	_Fmt_Pseudo   // Pseudo instruction
 )
 
 const (
@@ -247,6 +249,8 @@ func getInstructionFmt(inst Instruction) Inst_Fmt {
 		return Fmt_U
 	} else if _Inst_J_start < inst.Op && inst.Op < _Inst_J_end {
 		return Fmt_J
+	}else if _Inst_Pseudo_start < inst.Op && inst.Op < _Inst_Pseudo_end{
+		return _Fmt_Pseudo
 	}
 
 	return Fmt_R

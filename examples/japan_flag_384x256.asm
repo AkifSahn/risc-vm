@@ -4,20 +4,20 @@ main:
     ; Background color
     li s0, 0 
     ori s0, s0, 255 ; A
-    slli s0 s0 8
+    slli s0, s0, 8
     ori s0, s0, 255 ; B
-    slli s0 s0 8
+    slli s0, s0, 8
     ori s0, s0, 255 ; G
-    slli s0 s0 8
+    slli s0, s0, 8
     ori s0, s0, 255 ; R
 
     ; Circle Color
     ori s1, s1, 255 ; A
-    slli s1 s1 8
+    slli s1, s1, 8
     ori s1, s1, 45 ; B
-    slli s1 s1 8
-    ori s1, s1,  0; G
-    slli s1 s1 8
+    slli s1, s1, 8
+    ori s1, s1, 0 ; G
+    slli s1, s1, 8
     ori s1, s1, 255 ; R
 
     li s2, 384 ; Width

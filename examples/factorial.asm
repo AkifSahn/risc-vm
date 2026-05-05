@@ -19,4 +19,4 @@ main:
         call    factorial ; result stored at a0
         lw      ra,12(sp)
         addi    sp,sp,16
-        sw      a0 -4(sp) ; store result at memory
+        sw      a0, -4(sp) ; store result at memory
