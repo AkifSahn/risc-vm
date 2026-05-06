@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/AkifSahn/risc-vm/vm"
 )
@@ -12,14 +13,22 @@ import (
 func ListenAndServe(addr string) {
 	mux := SetupRoutes()
 
+	// Start the session purger goroutine
+	go func() {
+		for {
+			time.Sleep(SESSION_PURGE_INTERVAL_MINUTE)
+			purgeIdleSesions()
+		}
+	}()
+
 	http.ListenAndServe(addr, corsMiddleware(mux))
 }
 
 func SetupRoutes() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/session/{id}", getSessionHandler)
 	mux.HandleFunc("POST /api/session/new", newSessionHandler)
+	mux.HandleFunc("GET /api/session/{id}", getSessionHandler)
 	mux.HandleFunc("POST /api/session/{id}/load_program", withSessionMiddleware(loadProgramHandler))
 	mux.HandleFunc("POST /api/session/{id}/update_config", withSessionMiddleware(updateConfigHandler))
 	mux.HandleFunc("POST /api/session/{id}/step", withSessionMiddleware(stepProgramHandler))
@@ -46,13 +55,13 @@ func newSessionHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, err.Error()})
 	}
 
-	id, err := newSession(*config)
+	session, err := newSession(*config)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, err.Error()})
 		return
 	}
 
-	data := NewSessionResponse{Id: id}
+	data := NewSessionResponse{Id: session.id}
 	writeJSON(w, http.StatusOK, GenericResponse{"OK", data, ""})
 }
 
@@ -77,23 +86,25 @@ func getSessionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /api/session/{id}/load_program
-func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
+func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *Session) {
 	var req LoadProgramRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, "Invalid request body!"})
 		return
 	}
 
+	machine := session.machine
+
 	// Reset the vm and reload the program given
-	session.Reset(session.Config)
-	err := session.LoadProgramFromStr(req.ProgramStr)
+	machine.Reset(machine.Config)
+	err := machine.LoadProgramFromStr(req.ProgramStr)
 	if err != nil {
 		s := fmt.Sprintf("Failed to parse: %v", err.Error())
 		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, s})
 		return
 	}
 
-	prog_str := session.GetProgramStr()
+	prog_str := machine.GetProgramStr()
 	data := struct {
 		Program []string `json:"program"`
 	}{
@@ -103,12 +114,14 @@ func loadProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 	writeJSON(w, http.StatusOK, GenericResponse{"OK", data, ""})
 }
 
-func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
+func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *Session) {
 	var req UpdateConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, GenericResponse{"", nil, "Invalid request body!"})
 		return
 	}
+
+	machine := session.machine
 
 	config, err := vm.CreateConfig(req.MemorySize, req.MemorySize, req.PredictorBit, req.Forwarding, req.PredictorBit > 0)
 	if err != nil {
@@ -117,7 +130,7 @@ func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm)
 		return
 	}
 
-	session.Reset(*config)
+	machine.Reset(*config)
 
 	writeJSON(w, http.StatusOK, GenericResponse{"OK", nil, ""})
 }
@@ -126,7 +139,7 @@ func updateConfigHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm)
 //
 // Forwards the program by one cycle and returns any updated state.
 // For now, we return the whole state but later we will only return the diff
-func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) {
+func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *Session) {
 	params := r.URL.Query()
 	n_str := params.Get("n")
 	n, err := strconv.Atoi(n_str)
@@ -135,17 +148,19 @@ func stepProgramHandler(w http.ResponseWriter, r *http.Request, session *vm.Vm) 
 		return
 	}
 
+	machine := session.machine
+
 	// Negative 'n' number means execute until halt.
 	// TODO: what if the program contains an infinite loop??
 	states := []vm.Vm_State{}
-	for i := n; i != 0 && !session.Halted; i -= 1 {
-		session.ExecuteCycle()
-		state := session.GetState()
+	for i := n; i != 0 && !machine.Halted; i -= 1 {
+		machine.ExecuteCycle()
+		state := machine.GetState()
 		states = append(states, state)
 	}
 
-	if session.Runtime_error != nil {
-		writeJSON(w, http.StatusOK, GenericResponse{"", states, session.Runtime_error.Error()})
+	if machine.Runtime_error != nil {
+		writeJSON(w, http.StatusOK, GenericResponse{"", states, machine.Runtime_error.Error()})
 		return
 	}
 

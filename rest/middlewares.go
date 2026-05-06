@@ -3,19 +3,17 @@ package rest
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/AkifSahn/risc-vm/vm"
 )
 
-func withSessionMiddleware(next func(w http.ResponseWriter, r *http.Request, s *vm.Vm)) http.HandlerFunc {
+func withSessionMiddleware(next func(w http.ResponseWriter, r *http.Request, s *Session)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 
 		mu.Lock()
 		defer mu.Unlock()
 
-		session, ok := sessions[id]
-		if !ok {
+		session := getSession(id)
+		if session == nil {
 			http.Error(w, fmt.Sprintf("Session not found! 'id=%s'", id), http.StatusNotFound)
 			return
 		}

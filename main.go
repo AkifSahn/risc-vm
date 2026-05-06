@@ -46,7 +46,9 @@ func main() {
 		host := "127.0.0.1"
 
 		fmt.Printf("Server started at %s:%s\n", host, *port)
+
 		rest.ListenAndServe(fmt.Sprintf("%s:%s", host, *port))
+		return
 	} else if *filename == "" {
 		fmt.Println("Please provide a filename to simulate!")
 		fmt.Println()
