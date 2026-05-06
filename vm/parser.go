@@ -406,8 +406,8 @@ func ParseProgramFromString(program_str string) ([]Instruction, uint32, error) {
 		offset := (target - n) * 4
 
 		inst := &parser.Program[n]
-		// based on different control instructions, the offset is stored in different place
 
+		// based on different control instructions, the offset is stored in different place
 		switch inst._fmt {
 		case Fmt_B:
 			inst.Rs2 = int32(offset)

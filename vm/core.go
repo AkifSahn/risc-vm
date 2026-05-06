@@ -379,8 +379,13 @@ func (v *Vm) run_fetch() {
 			if v.Config.Bp_enabled {
 				taken, target := v.Bp.predict(v.Pc)
 				if taken {
-					v._control_buff[0].flags |= CONTROL_BRANCH
-					v._control_buff[0].branch_target = target
+					// We do this check because we don't want to overwrite any
+					// previous branch signal we only branch from 'IF' stage if
+					// there is no other pending branch operation!
+					if v._control_buff[0].flags&CONTROL_BRANCH == 0 {
+						v._control_buff[0].flags |= CONTROL_BRANCH
+						v._control_buff[0].branch_target = target
+					}
 				}
 			} else {
 				v._stall_map |= STALL_BRANCH
@@ -800,10 +805,10 @@ func (v *Vm) run_control() {
 		}
 		v.Pc = cb.branch_target
 	}
-
 	if cb.flags&CONTROL_FLUSH > 0 {
 		v.flush()
 	}
+
 }
 
 func (v *Vm) RunPipelined() error {
@@ -812,10 +817,6 @@ func (v *Vm) RunPipelined() error {
 	}
 
 	return v.Runtime_error
-	// if v.Runtime_error != nil {
-	// 	fmt.Printf("ERROR: %v", v.Runtime_error.Error())
-	// }
-
 }
 
 func (v *Vm) ExecuteCycle() {
