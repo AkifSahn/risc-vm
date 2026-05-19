@@ -304,19 +304,23 @@ func (v *Vm) flush() {
 	// 'end' instruction is not in the pipeline, we should not flush the buffers
 	if v._halt {
 		v._halt = false
-		// return
 	}
 
-	// Record the flushed instructions addresses in the cycle_info
-	pc1 := v._fd_buff[1].pc
-	pc2 := v._dx_buff[1].pc
-	v.cycle_info.Flushed_pcs[0] = pc1
-	v.cycle_info.Flushed_pcs[1] = pc2
+	// If pipeline buffer is not valid means it is empty so there is nothing to flush.
+	if v._fd_buff[1].valid{
+		pc1 := v._fd_buff[1].pc
+		v.cycle_info.Flushed_pcs[0] = pc1
+	}
 
-	// We also should decrement the busy flag of the 'rd' register if it was set.
-	d_inst := v._dx_buff[1].inst
-	if d_inst._fmt == Fmt_R || d_inst._fmt == Fmt_I || d_inst._fmt == Fmt_U || d_inst._fmt == Fmt_J {
-		v.Registers[d_inst.Rd].Busy -= 1
+	if v._dx_buff[1].valid{
+		pc2 := v._dx_buff[1].pc
+		v.cycle_info.Flushed_pcs[1] = pc2
+
+		// We also should decrement the busy flag of the 'rd' register if it was set.
+		d_inst := v._dx_buff[1].inst
+		if d_inst._fmt == Fmt_R || d_inst._fmt == Fmt_I || d_inst._fmt == Fmt_U || d_inst._fmt == Fmt_J {
+			v.Registers[d_inst.Rd].Busy -= 1
+		}
 	}
 
 	// Drain IF/ID and ID/EX pipeline buffers
