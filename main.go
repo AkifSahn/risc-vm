@@ -109,7 +109,7 @@ func main() {
 					fmt.Printf("\t*")
 					continue
 				}
-				fmt.Printf("\t%d", p)
+				fmt.Printf("\t%d", p/4)
 			}
 
 			fmt.Println()

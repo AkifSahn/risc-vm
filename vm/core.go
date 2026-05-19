@@ -304,7 +304,7 @@ func (v *Vm) flush() {
 	// 'end' instruction is not in the pipeline, we should not flush the buffers
 	if v._halt {
 		v._halt = false
-		return
+		// return
 	}
 
 	// Record the flushed instructions addresses in the cycle_info
@@ -793,7 +793,6 @@ func (v *Vm) run_writeback() {
 		v.Registers[inst.Rd].Data = inst._result
 		v.Register_diff_idx = append(v.Register_diff_idx, uint8(inst.Rd))
 	}
-
 }
 
 func (v *Vm) run_control() {

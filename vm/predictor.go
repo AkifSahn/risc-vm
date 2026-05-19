@@ -91,8 +91,7 @@ func (bp *Branch_Predictor) update(pc uint32, target uint32, outcome bool) bool 
 		}
 	}
 
-	old_target := entry.target
 	entry.target = target
 
-	return prediction == outcome && old_target == target
+	return prediction == outcome
 }
